@@ -1,0 +1,39 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node
+node_modules/
+.pnpm-store/
+
+# Anchor
+.anchor/
+test-ledger/
+
+# Next.js
+app/.next/
+app/out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+
+# Keys
+*.json.bak
+keypairs/

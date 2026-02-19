@@ -1,0 +1,22 @@
+[package]
+name = "exodus-tbill-vault"
+version = "0.1.0"
+edition = "2021"
+description = "EXODUS T-Bill Yield Vault — Mock T-Bill vault with NAV-based share accounting"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "exodus_tbill_vault"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }
+exodus-types = { path = "../../crates/exodus-types" }

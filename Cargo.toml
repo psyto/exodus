@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "crates/exodus-types",
+    "programs/exodus-core",
+    "programs/exodus-tbill-vault",
+]
+resolver = "2"
+
+[workspace.dependencies]
+anchor-lang = "0.32.1"
+anchor-spl = "0.32.1"
