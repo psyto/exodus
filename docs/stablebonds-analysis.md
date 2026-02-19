@@ -49,3 +49,35 @@ The "99% USD stablecoin dominance" framing is slightly misleading. It's true by 
 ## Regulatory Fragmentation
 
 The article is light on the regulatory complexity. For Japan specifically, the FSA's approach to stablecoins (JFSA's revised Payment Services Act) creates a very different regulatory environment from Mexico's fintech sandbox. EXODUS explicitly addresses this with Accredit transfer hooks and Sovereign Identity tiers. Etherfuse will face similar jurisdiction-by-jurisdiction compliance challenges as they scale to 100+ currencies.
+
+## Securities Classification
+
+A yield-bearing token backed by sovereign debt is almost certainly a security under most jurisdictions' frameworks. The article treats stablebonds as interchangeable with stablecoins ("interchangeable with the local fiat") but they're fundamentally different regulatory objects. Stablecoins are increasingly getting payment/e-money classification; stablebonds are tokenized fixed-income instruments. Etherfuse scaling to 100 currencies means navigating 100+ securities regulators, not just payment regulators. The article's framing obscures how much harder this is than issuing a stablecoin. For EXODUS, this distinction matters — our T-Bill vault shares are clearly a yield product, and the compliance layer (Accredit + Sovereign Identity) was designed with that in mind.
+
+## Duration Risk
+
+Duration risk is completely absent from the discussion. Sovereign bonds have duration. When rates rise, bond prices fall. The article treats stablebond yield as a pure positive, but a Mexican bondholder in 2022 watching Banxico hike rates aggressively saw capital losses that could exceed a year's coupon. How does Etherfuse handle NAV fluctuations? Is it mark-to-market or held-to-maturity accounting? This is a critical design decision that determines whether stablebonds can actually be used as "interchangeable with fiat." If they're mark-to-market, they'll depeg during rate hikes. If held-to-maturity, there's a maturity mismatch problem when users redeem early. Our T-Bill vault sidesteps this by using short-duration instruments where duration risk is minimal, but a generic "sovereign debt" wrapper across 100 currencies won't have that luxury.
+
+## The Oracle Problem for Exotic Pairs
+
+The article assumes reliable on-chain price feeds exist for all these currency pairs. They don't. Pyth and Switchboard have decent coverage for majors, but try getting a reliable on-chain TRY/KRW feed with sub-minute freshness. Etherfuse would either need to run its own oracle infrastructure (introducing centralization) or accept stale pricing (introducing arbitrage risk). This is a real bottleneck — you can tokenize all the bonds you want, but if you can't price them accurately on-chain, the FX market doesn't work. EXODUS faces a simpler version of this problem with just JPY/USD, and even there we built in a 300-second staleness check.
+
+## The Liquidity Bootstrapping Paradox
+
+The article argues stablebonds solve the liquidity problem by incentivizing LPs with yield. But this is circular — you need liquidity for the stablebond itself before LPs can earn meaningful trading fees on top of yield. Who provides the initial liquidity for a BRL stablebond/USDC pool? At launch, slippage will be enormous. The yield alone might not compensate for impermanent loss in a thin pool with a volatile underlying. The article would benefit from discussing Etherfuse's actual go-to-market for liquidity bootstrapping — protocol-owned liquidity, incentive programs, market maker partnerships, or something else.
+
+## Competitive Landscape: Tokenized Treasuries
+
+Comparison with tokenized treasuries is conspicuously missing. Ondo, Backed, Superstate, and others are already doing tokenized US Treasuries on-chain. The article positions Etherfuse as unique because of *non-USD* sovereign debt, but it doesn't compare Etherfuse's approach against these existing players. What happens when Ondo decides to tokenize JGBs or Mexican CETES? Etherfuse's moat appears to be local custodial partnerships and regulatory relationships, not technology. The article should make this competitive positioning more explicit.
+
+## DeFi Composability
+
+DeFi composability is mentioned but not explored. If stablebonds are ERC-20 or SPL tokens, they can be used as collateral in lending protocols. A user could deposit MXN stablebonds into a lending market, borrow USDC against them, and deploy the USDC into a USD yield strategy — creating a leveraged carry trade with on-chain liquidation. This is where things get genuinely interesting (and genuinely risky). The article sticks to relatively tame use cases (remittances, credit cards) when the DeFi-native applications are more novel and more dangerous.
+
+## Two Distinct User Bases
+
+The article conflates two distinct user bases with different needs. Institutional FX users need tight spreads, deep books, credit intermediation, and regulatory certainty — Circle's StableFX addresses this. Retail users in emerging markets need cheap remittances and savings products — Etherfuse's card integration addresses this. These are fundamentally different products requiring different infrastructure, different go-to-market, and different regulatory strategies. Lumping them under one "stablebonds fix FX" narrative makes the thesis sound broader than it is. Neither Etherfuse nor any single protocol is likely to serve both segments well.
+
+## What the Article Gets Right
+
+The observation that $27 trillion sits siloed in pre-funded FX accounts is staggering, and yield-bearing collateral that settles atomically does directly attack that capital inefficiency. That's probably the most investable thesis in the entire piece — not the retail use cases, but unlocking even a fraction of that trapped capital.
