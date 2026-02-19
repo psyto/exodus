@@ -78,6 +78,30 @@ DeFi composability is mentioned but not explored. If stablebonds are ERC-20 or S
 
 The article conflates two distinct user bases with different needs. Institutional FX users need tight spreads, deep books, credit intermediation, and regulatory certainty — Circle's StableFX addresses this. Retail users in emerging markets need cheap remittances and savings products — Etherfuse's card integration addresses this. These are fundamentally different products requiring different infrastructure, different go-to-market, and different regulatory strategies. Lumping them under one "stablebonds fix FX" narrative makes the thesis sound broader than it is. Neither Etherfuse nor any single protocol is likely to serve both segments well.
 
+## Sovereign Debt Crisis Tail Risk
+
+The article doesn't address the tail risk scenario. When Argentina restructured its debt in 2020, bondholders took a ~55% haircut. What happens to an ARS stablebond in that situation? The token either depegs catastrophically or the protocol absorbs the loss. Either outcome destroys user trust across *all* Etherfuse currencies, not just ARS — contagion via brand risk. This is fundamentally different from a stablecoin depeg because the underlying *actually defaults*, not just temporarily misprices. Etherfuse's multi-currency strategy concentrates this reputational risk.
+
+## Tax Asymmetry
+
+Tax treatment is a hidden killer for adoption. In Japan, crypto gains are taxed as miscellaneous income at up to 55% (income tax + resident tax). A JPY stablebond accruing JGB yield would generate taxable events continuously, while holding the same JGB in a traditional brokerage account gets preferential 20.315% capital gains treatment. This tax wedge alone could make stablebonds uneconomic for Japanese retail — the on-chain convenience premium doesn't justify a 35-point tax penalty. The article treats all jurisdictions as equivalent, but tax regimes are arguably a bigger barrier to adoption than regulation. EXODUS faces this same challenge, which is partly why the compliance layer matters — it creates a path toward eventual regulatory recognition that might qualify for better tax treatment.
+
+## CBDCs on a Collision Course
+
+BOJ's digital yen pilot, ECB's digital euro, and Brazil's DREX are all progressing. If central banks issue their own digital currencies with programmable yield (which some CBDC designs support), they directly compete with stablebonds in the one area Etherfuse claims advantage — local currency yield on-chain. The article doesn't acknowledge that stablebonds might be a transitional product that thrives in the gap between "crypto-native demand exists" and "CBDCs arrive." That gap could be 3 years or 15 years, but it's not permanent.
+
+## On-Chain Yield Curves
+
+If Etherfuse tokenizes sovereign debt across multiple maturities (3-month, 1-year, 10-year MXN CETES/bonds), you get a programmable yield curve. Smart contracts could interpolate rates, price interest rate swaps, or build structured products — all on-chain. This is far more interesting than the simple "hold and earn" narrative the article presents. An on-chain yield curve for emerging markets would be genuinely novel financial infrastructure. The article misses this entirely.
+
+## MEV and Front-Running in On-Chain FX
+
+Any FX conversion on-chain is susceptible to sandwich attacks. If a user swaps $1M of MXN stablebonds to USDC through an AMM, validators can extract value by front-running. The article's claim of "atomic settlement" is true but incomplete — atomicity doesn't prevent value extraction during execution. Circle's RFQ model avoids this by moving price discovery off-chain, but that sacrifices the permissionless property the article celebrates. This is an unresolved tension in on-chain FX design.
+
+## The "100 Currencies" Feasibility Question
+
+The target of 100 currencies by end of 2026 means 93 more in under a year. Each requires a local custodial partner, regulatory approval, bond market access, oracle infrastructure, and liquidity bootstrapping. Even assuming Etherfuse has templated the legal and technical stack, the operational complexity of managing custodial relationships across 100 jurisdictions simultaneously is extraordinary. The article presents this as a roadmap item without questioning its feasibility. For context, Wise (TransferWise) took 13 years to reach 50+ currencies with far more resources.
+
 ## What the Article Gets Right
 
 The observation that $27 trillion sits siloed in pre-funded FX accounts is staggering, and yield-bearing collateral that settles atomically does directly attack that capital inefficiency. That's probably the most investable thesis in the entire piece — not the retail use cases, but unlocking even a fraction of that trapped capital.
