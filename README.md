@@ -1,18 +1,84 @@
 # EXODUS Protocol
 
-**Earn 4.5% on your yen. On-chain. Compliant.**
+**A proof-of-concept for compliant JPY→USD yield on Solana.**
 
-Japanese savings accounts yield 0.1%. U.S. Treasury Bills yield 4.5%. That's a 45x gap. EXODUS bridges it.
+Japanese savings accounts yield 0.1%. U.S. Treasury Bills yield 4.5%. That's a 45x gap. EXODUS is a technical prototype exploring how that gap could be bridged on-chain — with compliance built in from the start.
 
-EXODUS is a Solana protocol that lets Japanese users deposit JPY stablecoins, automatically convert to USDC, and allocate to a T-Bill yield vault — all while staying compliant with Japan's FSA regulations through on-chain KYC (Accredit) and privacy-preserving identity (Sovereign).
-
-## Why This Matters
+## The Thesis
 
 **The structural problem:** Japan's Bank of Japan maintains ultra-low interest rates while the Fed keeps US rates elevated. This creates a persistent yield gap that Japanese savers can't easily exploit. Traditional brokerages charge high fees, require complex account setups, and don't offer real-time settlement.
 
-**The regulatory opening:** Japan's megabanks (MUFG, SMBC, Mizuho) are actively building regulated JPY stablecoin infrastructure under the revised Payment Services Act. For the first time, compliant JPY can flow on-chain — but there's nowhere for it to earn yield.
+**The regulatory opening:** Japan's megabanks (MUFG, SMBC, Mizuho) are actively building regulated JPY stablecoin infrastructure under the revised Payment Services Act. For the first time, compliant JPY could flow on-chain — but there's nowhere for it to earn yield.
 
-**What EXODUS does:** Takes compliant JPY stablecoins in, converts them to USDC at oracle-sourced rates, and deposits into a T-Bill yield vault. Users earn ~4.5% APY on what was previously earning 0.1%. Withdrawals return USDC (or convert back to JPY). All deposits are KYC-verified and tier-gated by identity level.
+**What EXODUS demonstrates:** A Solana-based architecture where compliant JPY stablecoins come in, get converted to USDC at oracle-sourced rates, and get deposited into a T-Bill yield vault — with KYC verification and tier-gated deposit limits enforced on-chain.
+
+## What This Actually Is
+
+This is a **working technical prototype** — not a deployable product. The Solana programs compile, 16 integration tests pass, and the dashboard renders. It proves the on-chain mechanics work: compliance hooks, two-step conversion flow, NAV-based share accounting, yield accrual, and a bilingual user interface.
+
+**What works today:**
+- Two Solana programs (exodus-core + exodus-tbill-vault) with full instruction sets
+- 16 passing integration tests covering deposits, conversions, withdrawals, yield accrual, and access control
+- TypeScript SDK with client, PDA helpers, instruction builders, and keeper bots
+- Next.js 15 dashboard with Japanese/English support, wallet connection, and all dashboard pages
+- On-chain compliance integration points (Accredit KYC + Sovereign Identity tiers)
+
+**What's mock / simulated:**
+- The T-Bill vault accrues yield based on a configurable APY and elapsed time — it doesn't hold real T-Bills
+- The JPY→USDC conversion reads a mock oracle — no real price feed or DEX integration
+- KYC status returns mock data when no Accredit program is deployed
+- The dashboard shows mock portfolio data when no wallet position exists on-chain
+
+## Honest Assessment: What Would It Take to Make This Real
+
+### 1. Regulation (the hardest part)
+
+A protocol that takes JPY, converts to USDC, and earns T-Bill yield would almost certainly be classified as a **Type I Financial Instruments Business** under Japan's FIEA (Financial Instruments and Exchange Act). That requires:
+- A license from Japan's FSA
+- Minimum capital requirements
+- Ongoing compliance and reporting obligations
+- Likely partnership with or operation by a licensed financial institution
+
+You can't just deploy smart contracts and call it a product.
+
+### 2. Tax economics
+
+Crypto gains in Japan are taxed as **miscellaneous income at up to 55%** (income tax + resident tax). A user earning 4.5% APY but paying 55% tax effectively earns ~2% after tax. Still better than 0.1%, but much less compelling than the headline number.
+
+For the economics to truly work, the protocol would need regulatory recognition as a securities product to qualify for Japan's **20.315% separated taxation** rate on financial income. That requires the regulatory licensing mentioned above.
+
+### 3. JPY stablecoins on Solana don't exist yet
+
+The megabank stablecoin projects (MUFG Progmat, etc.) are mostly on Ethereum or private/permissioned chains. There is no widely available regulated JPY stablecoin on Solana today. EXODUS's Token-2022 transfer hook integration assumes one will exist — but that's an assumption, not a certainty.
+
+### 4. The T-Bill vault is mock
+
+Real tokenized T-Bill access (Ondo OUSG, Superstate USTB, Backed bIB01, etc.) requires integration with regulated issuers who have their own accreditation requirements. You can't just pipe USDC into T-Bills without a regulated intermediary. The mock vault demonstrates the share accounting mechanics, but connecting to real yield requires real partnerships.
+
+### 5. Liquidity for FX conversion
+
+The "keeper pre-loads USDC via Jupiter" design assumes real market-making capital. Someone needs to provide the USDC liquidity for JPY→USDC conversion. This requires either institutional liquidity partners, integration with on-chain DEXs, or a treasury operation.
+
+### 6. Security
+
+The smart contracts have not been audited. Any protocol handling real funds would need at least one professional security audit before deployment.
+
+### Summary
+
+| Requirement | Status |
+|---|---|
+| On-chain architecture | Built and tested |
+| Compliance integration points | Designed, mock-verified |
+| FSA licensing | Not started — requires legal counsel |
+| JPY stablecoin on Solana | Does not exist yet |
+| Real T-Bill yield source | Requires partnership with tokenized treasury issuer |
+| FX liquidity | Requires market-making capital or DEX integration |
+| Security audit | Not done |
+| Tax-efficient structure | Requires regulatory classification |
+
+**Bottom line:** The thesis is sound, and the code proves the mechanics work. This is a prototype for exploring and demonstrating the idea — not a finished product. The regulatory and business challenges are where the real work would be.
+
+---
 
 ## How It Works
 
@@ -37,8 +103,6 @@ EXODUS is a Solana protocol that lets Japanese users deposit JPY stablecoins, au
 ```
 
 ## Architecture
-
-Two Solana programs, a TypeScript SDK, and a bilingual dashboard:
 
 ```
 exodus/
@@ -73,7 +137,7 @@ The main protocol program. Handles the full lifecycle:
 
 ### exodus-tbill-vault
 
-A self-contained yield vault with a clean interface — designed to be swapped for real T-Bill protocols (Ondo, Superstate, etc.) without changing core logic:
+A self-contained yield vault with a clean interface — designed to be swapped for real T-Bill protocols without changing core logic:
 
 - **NAV-based accounting:** `nav_per_share` starts at 1.000000 (scaled 1e6), increases over time
 - **Time-weighted yield:** `accrual = nav × apy_bps × elapsed / (10000 × seconds_per_year)`
@@ -95,7 +159,7 @@ EXODUS reads two external programs on-chain for regulatory compliance:
 
 ## Dashboard
 
-Full-featured Next.js 15 dashboard with bilingual support (Japanese / English):
+Next.js 15 dashboard with bilingual support (Japanese / English):
 
 | Page | Features |
 |---|---|
@@ -106,16 +170,14 @@ Full-featured Next.js 15 dashboard with bilingual support (Japanese / English):
 | **History** | Conversion table with date/direction/amount/rate/fee/status, CSV export |
 | **Admin** | Protocol stats, yield source management, fee config, pause/resume |
 
-The locale switcher in the header changes the URL (`/ja/dashboard` ↔ `/en/dashboard`) and all UI text.
-
 ## SDK
 
-The `@exodus/sdk` package (`packages/sdk/`) provides everything needed to interact with the protocol:
+The `@exodus/sdk` package provides:
 
 - **ExodusClient** — High-level client for reads (positions, yield, pending deposits) and writes (deposit, withdraw, claim)
 - **PDA derivation** — All program account address derivation functions
-- **Instruction builders** — Low-level transaction instruction constructors for custom integrations
-- **Keeper bots** — `ConversionBot` (polls and executes pending JPY→USDC conversions) and `NavUpdater` (cranks yield accrual on the T-Bill vault)
+- **Instruction builders** — Low-level transaction instruction constructors
+- **Keeper bots** — `ConversionBot` (polls pending JPY→USDC conversions) and `NavUpdater` (cranks yield accrual)
 - **Utilities** — Tier limit checks, share/NAV math, yield projections
 
 ## Development
@@ -147,19 +209,10 @@ cd app && pnpm dev
 ### Key Design Decisions
 
 - **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 with transfer hooks for automatic compliance enforcement. USDC uses standard SPL Token.
-- **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing (Jupiter, market makers).
+- **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing.
 - **Read-only compliance** — Rather than CPI to Accredit/Sovereign, the program deserializes their PDA accounts directly. Simpler, cheaper, and the transfer hook handles enforcement automatically.
-- **Swappable yield sources** — The `YieldSource` abstraction supports multiple strategies. Phase 1 uses a mock T-Bill vault; real protocols plug in without changing core logic.
-- **Oracle with staleness check** — Simplified PriceFeed PDA (Meridian pattern) with 300-second staleness threshold. Designed for easy migration to Pyth or Switchboard.
-
-## Roadmap
-
-| Phase | Scope |
-|---|---|
-| **Phase 1 (current)** | Mock T-Bill vault, two-step JPY→USDC conversion, full dashboard, KYC + tier gating |
-| **Phase 1.5** | On-chain Jupiter CPI for JPY→USDC, reverse conversion (USDC→JPY withdrawal), real oracle integration |
-| **Phase 2** | Real T-Bill vault integration (Ondo/Superstate), multi-source yield routing, leveraged yield strategies |
-| **Phase 3** | Cross-chain JPY rails, institutional API, mobile app |
+- **Swappable yield sources** — The `YieldSource` abstraction supports multiple strategies. The mock T-Bill vault can be replaced with real protocols without changing core logic.
+- **Oracle with staleness check** — Simplified PriceFeed PDA with 300-second staleness threshold. Designed for migration to Pyth or Switchboard.
 
 ## Related
 
