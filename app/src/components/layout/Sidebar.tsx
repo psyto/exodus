@@ -7,17 +7,18 @@ import { useI18n } from "@/providers/I18nProvider";
 
 interface NavItem {
   key: string;
-  href: string;
+  /** Path segment after /{locale}/ */
+  path: string;
   icon: string;
 }
 
 const navItems: NavItem[] = [
-  { key: "overview", href: "/dashboard", icon: "[=]" },
-  { key: "deposit", href: "/dashboard/deposit", icon: "[+]" },
-  { key: "withdraw", href: "/dashboard/withdraw", icon: "[-]" },
-  { key: "yield", href: "/dashboard/yield", icon: "[%]" },
-  { key: "history", href: "/dashboard/history", icon: "[#]" },
-  { key: "admin", href: "/dashboard/admin", icon: "[*]" },
+  { key: "overview", path: "dashboard", icon: "[=]" },
+  { key: "deposit", path: "dashboard/deposit", icon: "[+]" },
+  { key: "withdraw", path: "dashboard/withdraw", icon: "[-]" },
+  { key: "yield", path: "dashboard/yield", icon: "[%]" },
+  { key: "history", path: "dashboard/history", icon: "[#]" },
+  { key: "admin", path: "dashboard/admin", icon: "[*]" },
 ];
 
 interface SidebarProps {
@@ -26,12 +27,15 @@ interface SidebarProps {
 }
 
 export const Sidebar: FC<SidebarProps> = ({ collapsed = false, onToggle }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const pathname = usePathname();
 
-  const isActive = (href: string): boolean => {
-    if (href === "/dashboard") {
-      return pathname === "/dashboard" || pathname === "/dashboard/";
+  const hrefFor = (path: string) => `/${locale}/${path}`;
+
+  const isActive = (path: string): boolean => {
+    const href = hrefFor(path);
+    if (path === "dashboard") {
+      return pathname === href || pathname === `${href}/`;
     }
     return pathname.startsWith(href);
   };
@@ -60,11 +64,11 @@ export const Sidebar: FC<SidebarProps> = ({ collapsed = false, onToggle }) => {
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
             {navItems.map((item) => {
-              const active = isActive(item.href);
+              const active = isActive(item.path);
               return (
                 <li key={item.key}>
                   <Link
-                    href={item.href}
+                    href={hrefFor(item.path)}
                     onClick={onToggle}
                     className={`
                       relative flex items-center gap-3 rounded-lg px-3 py-2.5

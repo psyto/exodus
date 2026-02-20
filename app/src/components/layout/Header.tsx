@@ -6,16 +6,18 @@ import { useI18n } from "@/providers/I18nProvider";
 import { WalletButton } from "./WalletButton";
 
 const navItems = [
-  { key: "overview", href: "/dashboard" },
-  { key: "deposit", href: "/dashboard/deposit" },
-  { key: "withdraw", href: "/dashboard/withdraw" },
-  { key: "yield", href: "/dashboard/yield" },
-  { key: "history", href: "/dashboard/history" },
+  { key: "overview", path: "dashboard" },
+  { key: "deposit", path: "dashboard/deposit" },
+  { key: "withdraw", path: "dashboard/withdraw" },
+  { key: "yield", path: "dashboard/yield" },
+  { key: "history", path: "dashboard/history" },
 ] as const;
 
 export const Header: FC = () => {
   const { t, locale, setLocale } = useI18n();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const hrefFor = (path: string) => `/${locale}/${path}`;
 
   const toggleLocale = () => {
     setLocale(locale === "ja" ? "en" : "ja");
@@ -36,7 +38,7 @@ export const Header: FC = () => {
           {navItems.map((item) => (
             <Link
               key={item.key}
-              href={item.href}
+              href={hrefFor(item.path)}
               className="rounded-lg px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-navy-800 hover:text-gold-400"
             >
               {t(`nav.${item.key}`)}
@@ -107,7 +109,7 @@ export const Header: FC = () => {
             {navItems.map((item) => (
               <Link
                 key={item.key}
-                href={item.href}
+                href={hrefFor(item.path)}
                 onClick={() => setMobileMenuOpen(false)}
                 className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-300 transition-colors hover:bg-navy-800 hover:text-gold-400"
               >
