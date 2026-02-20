@@ -1,8 +1,8 @@
 import { PublicKey } from "@solana/web3.js";
 
 export const PROGRAM_IDS = {
-  EXODUS_CORE: new PublicKey("ExoD1111111111111111111111111111111111111111"),
-  TBILL_VAULT: new PublicKey("ExoT1111111111111111111111111111111111111111"),
+  EXODUS_CORE: new PublicKey("A59QJtaFuap54ZBq8GfMDAAW7tWCJ4hHAGrbL8v22ZRU"),
+  TBILL_VAULT: new PublicKey("2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz"),
   ACCREDIT_TRANSFER_HOOK: new PublicKey(
     "5DLH2UrDD5bJFadn1gV1rof6sJ7MzJbVNnUfVMtGJgSL"
   ),

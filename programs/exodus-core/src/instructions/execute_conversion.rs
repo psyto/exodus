@@ -18,6 +18,7 @@ const MAX_ORACLE_STALENESS: i64 = 300; // 5 minutes
 #[derive(Accounts)]
 pub struct ExecuteConversion<'info> {
     /// Keeper that triggers the conversion
+    #[account(mut)]
     pub keeper: Signer<'info>,
 
     #[account(

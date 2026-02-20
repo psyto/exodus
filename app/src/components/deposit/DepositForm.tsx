@@ -17,8 +17,10 @@ interface DepositFormProps {
 export function DepositForm({ onSubmit }: DepositFormProps) {
   const { t } = useI18n();
   const [currency, setCurrency] = useState<"JPY" | "USDC">("JPY");
-  const [amount, setAmount] = useState<number>(0);
+  const [amountStr, setAmountStr] = useState<string>("");
   const [slippageBps, setSlippageBps] = useState<number>(50);
+
+  const amount = parseFloat(amountStr) || 0;
 
   // Mock rate and tier data — replace with live data from API/context
   const jpyToUsdcRate = 0.0067; // 1 JPY ≈ 0.0067 USDC (≈150 JPY/USD)
@@ -69,9 +71,9 @@ export function DepositForm({ onSubmit }: DepositFormProps) {
           {t("deposit.amount", "Amount")}
         </label>
         <AmountInput
-          value={amount}
-          onChange={setAmount}
-          currency={currency}
+          value={amountStr}
+          onChange={setAmountStr}
+          token={currency}
         />
       </div>
 

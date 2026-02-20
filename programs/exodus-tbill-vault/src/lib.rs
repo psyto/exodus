@@ -7,7 +7,7 @@ pub mod state;
 use errors::TBillVaultError;
 use state::{UserShares, VaultConfig};
 
-declare_id!("ExoT1111111111111111111111111111111111111111");
+declare_id!("2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz");
 
 const SECONDS_PER_YEAR: u64 = 365 * 24 * 60 * 60;
 const NAV_SCALE: u64 = 1_000_000;

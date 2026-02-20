@@ -7,7 +7,7 @@ pub mod state;
 
 use instructions::*;
 
-declare_id!("ExoD1111111111111111111111111111111111111111");
+declare_id!("A59QJtaFuap54ZBq8GfMDAAW7tWCJ4hHAGrbL8v22ZRU");
 
 #[program]
 pub mod exodus_core {

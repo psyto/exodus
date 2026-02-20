@@ -7,12 +7,12 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-exodus_core = "ExoD1111111111111111111111111111111111111111"
-exodus_tbill_vault = "ExoT1111111111111111111111111111111111111111"
+exodus_core = "A59QJtaFuap54ZBq8GfMDAAW7tWCJ4hHAGrbL8v22ZRU"
+exodus_tbill_vault = "2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz"
 
 [programs.localnet]
-exodus_core = "ExoD1111111111111111111111111111111111111111"
-exodus_tbill_vault = "ExoT1111111111111111111111111111111111111111"
+exodus_core = "A59QJtaFuap54ZBq8GfMDAAW7tWCJ4hHAGrbL8v22ZRU"
+exodus_tbill_vault = "2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz"
 
 [registry]
 url = "https://api.apr.dev"

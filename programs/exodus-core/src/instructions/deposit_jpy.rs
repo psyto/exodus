@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface;
+use anchor_spl::token_2022::spl_token_2022;
 use exodus_types::{monthly_jpy_limit, DepositStatus};
 
 use crate::errors::ExodusError;

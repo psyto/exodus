@@ -10,13 +10,13 @@ const messages: Record<Locale, typeof en> = { en, ja };
 interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  t: (key: string) => string;
+  t: (key: string, fallback?: string) => string;
 }
 
 const I18nContext = createContext<I18nContextValue>({
   locale: defaultLocale,
   setLocale: () => {},
-  t: (key: string) => key,
+  t: (key: string, fallback?: string) => fallback ?? key,
 });
 
 export const useI18n = () => useContext(I18nContext);
@@ -39,13 +39,13 @@ export const I18nProvider: FC<Props> = ({
   }, []);
 
   const t = useCallback(
-    (key: string): string => {
+    (key: string, fallback?: string): string => {
       const keys = key.split(".");
       let value: any = messages[locale];
       for (const k of keys) {
         value = value?.[k];
       }
-      return typeof value === "string" ? value : key;
+      return typeof value === "string" ? value : (fallback ?? key);
     },
     [locale]
   );
