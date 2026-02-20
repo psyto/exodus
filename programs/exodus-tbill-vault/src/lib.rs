@@ -95,6 +95,7 @@ pub mod exodus_tbill_vault {
         let user_shares = &mut ctx.accounts.user_shares;
         user_shares.user = ctx.accounts.user.key();
         user_shares.vault = ctx.accounts.vault_config.key();
+        user_shares.bump = ctx.bumps.user_shares;
         user_shares.shares = user_shares
             .shares
             .checked_add(shares)

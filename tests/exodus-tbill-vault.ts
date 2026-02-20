@@ -1,30 +1,38 @@
-import * as anchor from "@coral-xyz/anchor";
+import { startAnchor, BankrunProvider } from "anchor-bankrun";
 import { Program, BN } from "@coral-xyz/anchor";
 import { assert } from "chai";
 import {
   Keypair,
   PublicKey,
   SystemProgram,
+  Transaction,
   LAMPORTS_PER_SOL,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
-  createMint,
-  createAccount,
-  createAssociatedTokenAccount,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createInitializeMintInstruction,
+  createAssociatedTokenAccountInstruction,
+  createMintToInstruction,
   getAssociatedTokenAddressSync,
-  mintTo,
+  getMinimumBalanceForRentExemptMint,
+  MINT_SIZE,
   getAccount,
 } from "@solana/spl-token";
 
-describe("exodus-tbill-vault", () => {
-  const provider = anchor.AnchorProvider.env();
-  anchor.setProvider(provider);
+const IDL = require("../target/idl/exodus_tbill_vault.json");
+const PROGRAM_ID = new PublicKey(
+  "2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz"
+);
 
-  const program = anchor.workspace.ExodusTbillVault as Program;
+describe("exodus-tbill-vault", () => {
+  let provider: BankrunProvider;
+  let program: Program;
 
   let authority: Keypair;
   let user: Keypair;
+  let usdcMintKeypair: Keypair;
   let usdcMint: PublicKey;
   let vaultConfig: PublicKey;
   let shareMint: PublicKey;
@@ -36,45 +44,72 @@ describe("exodus-tbill-vault", () => {
   before(async () => {
     authority = Keypair.generate();
     user = Keypair.generate();
+    usdcMintKeypair = Keypair.generate();
+    usdcMint = usdcMintKeypair.publicKey;
 
-    // Fund accounts
-    for (const kp of [authority, user]) {
-      const sig = await provider.connection.requestAirdrop(
-        kp.publicKey,
-        100 * LAMPORTS_PER_SOL
-      );
-      await provider.connection.confirmTransaction(sig);
-    }
+    // Pre-fund accounts via startAnchor
+    const preloadedAccounts = [
+      {
+        address: authority.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: user.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+    ];
 
-    // Create USDC mint
-    usdcMint = await createMint(
-      provider.connection,
-      authority,
-      authority.publicKey,
-      null,
-      6,
-      Keypair.generate(),
-      undefined,
-      TOKEN_PROGRAM_ID
+    const context = await startAnchor(".", [], preloadedAccounts);
+    provider = new BankrunProvider(context);
+    program = new Program(IDL, provider);
+
+    // Create USDC mint using raw instructions via provider.sendAndConfirm
+    const mintRent = await provider.connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+    const createMintTx = new Transaction().add(
+      SystemProgram.createAccount({
+        fromPubkey: authority.publicKey,
+        newAccountPubkey: usdcMintKeypair.publicKey,
+        space: MINT_SIZE,
+        lamports: mintRent,
+        programId: TOKEN_PROGRAM_ID,
+      }),
+      createInitializeMintInstruction(
+        usdcMintKeypair.publicKey,
+        6,
+        authority.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
     );
+    await provider.sendAndConfirm(createMintTx, [authority, usdcMintKeypair]);
 
     // Derive PDAs
     [vaultConfig] = PublicKey.findProgramAddressSync(
       [Buffer.from("tbill_vault")],
-      program.programId
+      PROGRAM_ID
     );
     [shareMint] = PublicKey.findProgramAddressSync(
       [Buffer.from("tbill_share_mint")],
-      program.programId
+      PROGRAM_ID
     );
     [usdcVault] = PublicKey.findProgramAddressSync(
       [Buffer.from("tbill_usdc_vault")],
-      program.programId
+      PROGRAM_ID
     );
   });
 
   it("initializes vault with 4.5% APY", async () => {
-    const tx = await program.methods
+    await program.methods
       .initializeVault(450) // 4.50% APY
       .accounts({
         authority: authority.publicKey,
@@ -84,7 +119,7 @@ describe("exodus-tbill-vault", () => {
         usdcVault,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .signers([authority])
       .rpc();
@@ -98,36 +133,46 @@ describe("exodus-tbill-vault", () => {
   });
 
   it("deposits USDC and receives shares", async () => {
-    // Create user USDC account and fund
-    userUsdc = await createAssociatedTokenAccount(
-      provider.connection,
-      user,
-      usdcMint,
-      user.publicKey,
-      undefined,
-      TOKEN_PROGRAM_ID
+    // Create user USDC ATA
+    userUsdc = getAssociatedTokenAddressSync(usdcMint, user.publicKey);
+    const createAtaTx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        user.publicKey,
+        userUsdc,
+        user.publicKey,
+        usdcMint,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
     );
-    await mintTo(
-      provider.connection,
-      authority,
-      usdcMint,
-      userUsdc,
-      authority,
-      10_000_000_000, // 10,000 USDC
-      [],
-      undefined,
-      TOKEN_PROGRAM_ID
+    await provider.sendAndConfirm(createAtaTx, [user]);
+
+    // Fund user USDC
+    const mintToTx = new Transaction().add(
+      createMintToInstruction(
+        usdcMint,
+        userUsdc,
+        authority.publicKey,
+        10_000_000_000, // 10,000 USDC
+        [],
+        TOKEN_PROGRAM_ID
+      )
     );
+    await provider.sendAndConfirm(mintToTx, [authority]);
 
     // Create user share ATA
-    userSharesAta = await createAssociatedTokenAccount(
-      provider.connection,
-      user,
-      shareMint,
-      user.publicKey,
-      undefined,
-      TOKEN_PROGRAM_ID
+    userSharesAta = getAssociatedTokenAddressSync(shareMint, user.publicKey);
+    const createShareAtaTx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        user.publicKey,
+        userSharesAta,
+        user.publicKey,
+        shareMint,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
     );
+    await provider.sendAndConfirm(createShareAtaTx, [user]);
 
     // Derive UserShares PDA
     [userSharesPda] = PublicKey.findProgramAddressSync(
@@ -136,7 +181,7 @@ describe("exodus-tbill-vault", () => {
         vaultConfig.toBuffer(),
         user.publicKey.toBuffer(),
       ],
-      program.programId
+      PROGRAM_ID
     );
 
     const depositAmount = new BN(1_000_000_000); // 1,000 USDC
@@ -173,7 +218,6 @@ describe("exodus-tbill-vault", () => {
   });
 
   it("accrues yield and NAV increases", async () => {
-    // First accrual (might be small due to short time elapsed)
     await program.methods
       .accrueYield()
       .accounts({ vaultConfig })
@@ -216,11 +260,13 @@ describe("exodus-tbill-vault", () => {
 
   it("rejects unauthorized APY update", async () => {
     const randomUser = Keypair.generate();
-    const sig = await provider.connection.requestAirdrop(
-      randomUser.publicKey,
-      LAMPORTS_PER_SOL
-    );
-    await provider.connection.confirmTransaction(sig);
+    // Fund via setAccount
+    (provider as any).context.setAccount(randomUser.publicKey, {
+      lamports: LAMPORTS_PER_SOL,
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
 
     try {
       await program.methods

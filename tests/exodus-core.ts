@@ -5,36 +5,47 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  Transaction,
   LAMPORTS_PER_SOL,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
-  createMint,
-  createAssociatedTokenAccount,
-  mintTo,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  MINT_SIZE,
+  createInitializeMintInstruction,
+  createAssociatedTokenAccountInstruction,
+  createMintToInstruction,
+  getAssociatedTokenAddressSync,
   getAccount,
 } from "@solana/spl-token";
+import { startAnchor, BankrunProvider } from "anchor-bankrun";
 
-describe("exodus-core", () => {
-  const provider = anchor.AnchorProvider.env();
-  anchor.setProvider(provider);
+const coreIdl = require("../target/idl/exodus_core.json");
+const tbillIdl = require("../target/idl/exodus_tbill_vault.json");
 
-  const coreProgram = anchor.workspace.ExodusCore as Program;
-  const tbillProgram = anchor.workspace.ExodusTbillVault as Program;
+const CORE_PROGRAM_ID = new PublicKey("A59QJtaFuap54ZBq8GfMDAAW7tWCJ4hHAGrbL8v22ZRU");
+const TBILL_PROGRAM_ID = new PublicKey("2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz");
+
+describe("exodus-core (bankrun)", () => {
+  let provider: BankrunProvider;
+  let coreProgram: Program;
+  let tbillProgram: Program;
 
   let authority: Keypair;
   let user: Keypair;
   let keeper: Keypair;
+  let noKycUser: Keypair;
+
   let jpyMint: PublicKey;
   let usdcMint: PublicKey;
   let userJpyAta: PublicKey;
   let userUsdcAta: PublicKey;
 
-  // Mock external accounts
+  // Mock external accounts (pre-loaded via bankrun)
   let oracleKeypair: Keypair;
   let whitelistEntryKeypair: Keypair;
   let sovereignIdentityKeypair: Keypair;
-  let noKycUser: Keypair;
 
   // PDAs
   let protocolConfig: PublicKey;
@@ -49,109 +60,260 @@ describe("exodus-core", () => {
   let tbillUsdcVault: PublicKey;
 
   before(async () => {
+    // ------------------------------------------------------------------
+    // 1. Generate deterministic keypairs BEFORE starting bankrun,
+    //    because mock account data embeds the user pubkey.
+    // ------------------------------------------------------------------
     authority = Keypair.generate();
     user = Keypair.generate();
     keeper = Keypair.generate();
     noKycUser = Keypair.generate();
-
-    const conn = provider.connection;
-
-    // Fund all accounts
-    for (const kp of [authority, user, keeper, noKycUser]) {
-      const sig = await conn.requestAirdrop(kp.publicKey, 100 * LAMPORTS_PER_SOL);
-      await conn.confirmTransaction(sig);
-    }
-
-    // Create mints
-    usdcMint = await createMint(conn, authority, authority.publicKey, null, 6);
-    jpyMint = await createMint(conn, authority, authority.publicKey, null, 6);
-
-    // Create user token accounts
-    userUsdcAta = await createAssociatedTokenAccount(conn, user, usdcMint, user.publicKey);
-    userJpyAta = await createAssociatedTokenAccount(conn, user, jpyMint, user.publicKey);
-
-    // Fund user
-    await mintTo(conn, authority, usdcMint, userUsdcAta, authority, 10_000_000_000_000);
-    await mintTo(conn, authority, jpyMint, userJpyAta, authority, 100_000_000_000_000);
-
-    // Create mock Oracle PriceFeed (JPY/USD = 155.00)
     oracleKeypair = Keypair.generate();
-    const oracleSpace = 56; // 8 + 32 + 8 + 8
-    const oracleRent = await conn.getMinimumBalanceForRentExemption(oracleSpace);
-    const oracleData = Buffer.alloc(oracleSpace);
-    oracleData.writeBigUInt64LE(0n, 0); // discriminator
-    authority.publicKey.toBuffer().copy(oracleData, 8);
-    oracleData.writeBigUInt64LE(155_000_000n, 40); // price
-    oracleData.writeBigInt64LE(BigInt(Math.floor(Date.now() / 1000)), 48); // timestamp
-
-    const createOracleTx = new anchor.web3.Transaction().add(
-      SystemProgram.createAccount({
-        fromPubkey: authority.publicKey,
-        newAccountPubkey: oracleKeypair.publicKey,
-        space: oracleSpace,
-        lamports: oracleRent,
-        programId: SystemProgram.programId,
-      })
-    );
-    await provider.sendAndConfirm(createOracleTx, [authority, oracleKeypair]);
-
-    // Create mock Accredit WhitelistEntry for user
     whitelistEntryKeypair = Keypair.generate();
-    const wlSpace = 83;
-    const wlRent = await conn.getMinimumBalanceForRentExemption(wlSpace);
-    const wlData = Buffer.alloc(wlSpace);
-    wlData.writeBigUInt64LE(0n, 0);
-    user.publicKey.toBuffer().copy(wlData, 8);
-    PublicKey.default.toBuffer().copy(wlData, 40);
-    wlData[72] = 1; // is_active
-    wlData[73] = 2; // kyc_level
-    wlData[74] = 0; // jurisdiction = Japan
-    const expiresAt = BigInt(Math.floor(Date.now() / 1000)) + 365n * 86400n;
-    wlData.writeBigInt64LE(expiresAt, 75);
-
-    const createWlTx = new anchor.web3.Transaction().add(
-      SystemProgram.createAccount({
-        fromPubkey: authority.publicKey,
-        newAccountPubkey: whitelistEntryKeypair.publicKey,
-        space: wlSpace,
-        lamports: wlRent,
-        programId: SystemProgram.programId,
-      })
-    );
-    await provider.sendAndConfirm(createWlTx, [authority, whitelistEntryKeypair]);
-
-    // Create mock Sovereign Identity (tier 2 = Silver)
     sovereignIdentityKeypair = Keypair.generate();
-    const sovSpace = 41;
-    const sovRent = await conn.getMinimumBalanceForRentExemption(sovSpace);
-    const sovData = Buffer.alloc(sovSpace);
-    sovData.writeBigUInt64LE(0n, 0);
-    user.publicKey.toBuffer().copy(sovData, 8);
-    sovData[40] = 2; // tier = Silver
 
-    const createSovTx = new anchor.web3.Transaction().add(
+    // ------------------------------------------------------------------
+    // 2. Build mock account data buffers
+    // ------------------------------------------------------------------
+
+    // --- Accredit WhitelistEntry (83 bytes) for `user` ---
+    const wlData = Buffer.alloc(83);
+    wlData.writeBigUInt64LE(0n, 0);                          // [0..8]   discriminator
+    user.publicKey.toBuffer().copy(wlData, 8);                // [8..40]  owner = user
+    PublicKey.default.toBuffer().copy(wlData, 40);            // [40..72] registry = default
+    wlData[72] = 1;                                           // is_active
+    wlData[73] = 2;                                           // kyc_level
+    wlData[74] = 0;                                           // jurisdiction = Japan
+    const expiresAt = BigInt(Math.floor(Date.now() / 1000)) + 365n * 86400n;
+    wlData.writeBigInt64LE(expiresAt, 75);                    // [75..83] expires_at
+
+    // --- Sovereign Identity (41 bytes) for `user` ---
+    const sovData = Buffer.alloc(41);
+    sovData.writeBigUInt64LE(0n, 0);                          // [0..8]   discriminator
+    user.publicKey.toBuffer().copy(sovData, 8);               // [8..40]  owner = user
+    sovData[40] = 2;                                          // tier = Silver
+
+    // --- Oracle PriceFeed (56 bytes) ---
+    const oracleData = Buffer.alloc(56);
+    oracleData.writeBigUInt64LE(0n, 0);                       // [0..8]   discriminator
+    PublicKey.default.toBuffer().copy(oracleData, 8);         // [8..40]  authority (zeros)
+    oracleData.writeBigUInt64LE(155_000_000n, 40);            // [40..48] current_price = 155 JPY/USD
+    const oracleTimestamp = BigInt(Math.floor(Date.now() / 1000));
+    oracleData.writeBigInt64LE(oracleTimestamp, 48);          // [48..56] last_update_time
+
+    // ------------------------------------------------------------------
+    // 3. Pre-loaded accounts for bankrun
+    // ------------------------------------------------------------------
+    const preloadedAccounts = [
+      // Fund authority
+      {
+        address: authority.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      // Fund user
+      {
+        address: user.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      // Fund keeper
+      {
+        address: keeper.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      // Fund noKycUser
+      {
+        address: noKycUser.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      // Oracle PriceFeed mock
+      {
+        address: oracleKeypair.publicKey,
+        info: {
+          lamports: 1_000_000_000,
+          data: oracleData,
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      // Accredit WhitelistEntry mock for `user`
+      {
+        address: whitelistEntryKeypair.publicKey,
+        info: {
+          lamports: 1_000_000_000,
+          data: wlData,
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      // Sovereign Identity mock for `user`
+      {
+        address: sovereignIdentityKeypair.publicKey,
+        info: {
+          lamports: 1_000_000_000,
+          data: sovData,
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+    ];
+
+    // ------------------------------------------------------------------
+    // 4. Start bankrun with Anchor workspace programs + pre-loaded accounts
+    // ------------------------------------------------------------------
+    const context = await startAnchor(
+      ".",         // Anchor project root (current directory)
+      [],          // No extra programs beyond workspace
+      preloadedAccounts
+    );
+
+    provider = new BankrunProvider(context);
+    anchor.setProvider(provider);
+
+    // ------------------------------------------------------------------
+    // 5. Create Program instances from IDL
+    // ------------------------------------------------------------------
+    coreProgram = new Program(coreIdl, provider);
+    tbillProgram = new Program(tbillIdl, provider);
+
+    // ------------------------------------------------------------------
+    // 6. Create mints and token accounts using raw transactions (bankrun compatible)
+    // ------------------------------------------------------------------
+    const mintRent = await provider.connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+
+    // Create USDC mint keypair and JPY mint keypair
+    const usdcMintKeypair = Keypair.generate();
+    const jpyMintKeypair = Keypair.generate();
+    usdcMint = usdcMintKeypair.publicKey;
+    jpyMint = jpyMintKeypair.publicKey;
+
+    // Create USDC mint (standard SPL Token, 6 decimals)
+    const createUsdcMintTx = new Transaction().add(
       SystemProgram.createAccount({
         fromPubkey: authority.publicKey,
-        newAccountPubkey: sovereignIdentityKeypair.publicKey,
-        space: sovSpace,
-        lamports: sovRent,
-        programId: SystemProgram.programId,
-      })
+        newAccountPubkey: usdcMintKeypair.publicKey,
+        space: MINT_SIZE,
+        lamports: mintRent,
+        programId: TOKEN_PROGRAM_ID,
+      }),
+      createInitializeMintInstruction(
+        usdcMintKeypair.publicKey,
+        6,
+        authority.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
     );
-    await provider.sendAndConfirm(createSovTx, [authority, sovereignIdentityKeypair]);
+    await provider.sendAndConfirm(createUsdcMintTx, [authority, usdcMintKeypair]);
 
-    // Derive core PDAs
+    // Create JPY mint (standard SPL Token for test, 6 decimals)
+    const createJpyMintTx = new Transaction().add(
+      SystemProgram.createAccount({
+        fromPubkey: authority.publicKey,
+        newAccountPubkey: jpyMintKeypair.publicKey,
+        space: MINT_SIZE,
+        lamports: mintRent,
+        programId: TOKEN_PROGRAM_ID,
+      }),
+      createInitializeMintInstruction(
+        jpyMintKeypair.publicKey,
+        6,
+        authority.publicKey,
+        null,
+        TOKEN_PROGRAM_ID
+      )
+    );
+    await provider.sendAndConfirm(createJpyMintTx, [authority, jpyMintKeypair]);
+
+    // Create user USDC ATA
+    userUsdcAta = getAssociatedTokenAddressSync(usdcMint, user.publicKey);
+    const createUsdcAtaTx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        user.publicKey,
+        userUsdcAta,
+        user.publicKey,
+        usdcMint,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
+    );
+    await provider.sendAndConfirm(createUsdcAtaTx, [user]);
+
+    // Create user JPY ATA
+    userJpyAta = getAssociatedTokenAddressSync(jpyMint, user.publicKey);
+    const createJpyAtaTx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        user.publicKey,
+        userJpyAta,
+        user.publicKey,
+        jpyMint,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
+    );
+    await provider.sendAndConfirm(createJpyAtaTx, [user]);
+
+    // Fund user with USDC (10M)
+    const mintUsdcTx = new Transaction().add(
+      createMintToInstruction(
+        usdcMint,
+        userUsdcAta,
+        authority.publicKey,
+        10_000_000_000_000,
+        [],
+        TOKEN_PROGRAM_ID
+      )
+    );
+    await provider.sendAndConfirm(mintUsdcTx, [authority]);
+
+    // Fund user with JPY (100M)
+    const mintJpyTx = new Transaction().add(
+      createMintToInstruction(
+        jpyMint,
+        userJpyAta,
+        authority.publicKey,
+        100_000_000_000_000,
+        [],
+        TOKEN_PROGRAM_ID
+      )
+    );
+    await provider.sendAndConfirm(mintJpyTx, [authority]);
+
+    // ------------------------------------------------------------------
+    // 7. Derive PDAs
+    // ------------------------------------------------------------------
+
+    // Core PDAs
     [protocolConfig] = PublicKey.findProgramAddressSync(
       [Buffer.from("exodus_config")],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
     [jpyVault] = PublicKey.findProgramAddressSync(
       [Buffer.from("exodus_jpy_vault")],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
     [usdcVault] = PublicKey.findProgramAddressSync(
       [Buffer.from("exodus_usdc_vault")],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
     [userPosition] = PublicKey.findProgramAddressSync(
       [
@@ -159,21 +321,21 @@ describe("exodus-core", () => {
         protocolConfig.toBuffer(),
         user.publicKey.toBuffer(),
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
     // T-Bill vault PDAs
     [tbillVaultConfig] = PublicKey.findProgramAddressSync(
       [Buffer.from("tbill_vault")],
-      tbillProgram.programId
+      TBILL_PROGRAM_ID
     );
     [tbillShareMint] = PublicKey.findProgramAddressSync(
       [Buffer.from("tbill_share_mint")],
-      tbillProgram.programId
+      TBILL_PROGRAM_ID
     );
     [tbillUsdcVault] = PublicKey.findProgramAddressSync(
       [Buffer.from("tbill_usdc_vault")],
-      tbillProgram.programId
+      TBILL_PROGRAM_ID
     );
   });
 
@@ -184,9 +346,9 @@ describe("exodus-core", () => {
       oracle: oracleKeypair.publicKey,
       kycRegistry: PublicKey.default,
       sovereignProgram: PublicKey.default,
-      conversionFeeBps: 30, // 0.30%
-      managementFeeBps: 50, // 0.50%
-      performanceFeeBps: 1000, // 10%
+      conversionFeeBps: 30,       // 0.30%
+      managementFeeBps: 50,       // 0.50%
+      performanceFeeBps: 1000,    // 10%
     };
 
     await coreProgram.methods
@@ -199,9 +361,9 @@ describe("exodus-core", () => {
         jpyVault,
         usdcVault,
         tokenProgram: TOKEN_PROGRAM_ID,
-        token2022Program: TOKEN_PROGRAM_ID, // Using SPL for test
+        token2022Program: TOKEN_PROGRAM_ID, // Using standard SPL Token for test JPY
         systemProgram: SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .signers([authority])
       .rpc();
@@ -226,7 +388,7 @@ describe("exodus-core", () => {
         usdcVault: tbillUsdcVault,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .signers([authority])
       .rpc();
@@ -238,7 +400,7 @@ describe("exodus-core", () => {
         protocolConfig.toBuffer(),
         usdcMint.toBuffer(),
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
     const nameBytes = Buffer.alloc(32);
@@ -247,11 +409,11 @@ describe("exodus-core", () => {
     const params = {
       name: Array.from(nameBytes),
       sourceType: { tBill: {} },
-      depositVault: tbillUsdcVault,
+      depositVault: usdcVault,
       yieldTokenVault: tbillShareMint,
-      allocationWeightBps: 10000, // 100%
-      minDeposit: new BN(1_000_000), // 1 USDC min
-      maxAllocation: new BN(1_000_000_000_000), // 1M USDC max
+      allocationWeightBps: 10000,                  // 100%
+      minDeposit: new BN(1_000_000),               // 1 USDC min
+      maxAllocation: new BN(1_000_000_000_000),    // 1M USDC max
     };
 
     await coreProgram.methods
@@ -286,11 +448,11 @@ describe("exodus-core", () => {
         user.publicKey.toBuffer(),
         nonceBuffer,
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
-    const jpyAmount = new BN(1_000_000_000_000); // ¥1,000,000
-    const minUsdcOut = new BN(6_000_000_000); // ~$6,000 min
+    const jpyAmount = new BN(1_000_000_000_000);     // 1,000,000 JPY
+    const minUsdcOut = new BN(6_000_000_000);         // ~$6,000 min
 
     await coreProgram.methods
       .depositJpy(jpyAmount, minUsdcOut)
@@ -304,7 +466,7 @@ describe("exodus-core", () => {
         pendingDeposit,
         whitelistEntry: whitelistEntryKeypair.publicKey,
         sovereignIdentity: sovereignIdentityKeypair.publicKey,
-        token2022Program: TOKEN_PROGRAM_ID,
+        token2022Program: TOKEN_PROGRAM_ID,       // Standard SPL for test
         systemProgram: SystemProgram.programId,
       })
       .signers([user])
@@ -325,20 +487,20 @@ describe("exodus-core", () => {
     // Create a sovereign identity for noKycUser but NO whitelist entry
     const noKycSovKeypair = Keypair.generate();
     const sovSpace = 41;
-    const sovRent = await provider.connection.getMinimumBalanceForRentExemption(sovSpace);
+    const sovData = Buffer.alloc(sovSpace);
+    sovData.writeBigUInt64LE(0n, 0);
+    noKycUser.publicKey.toBuffer().copy(sovData, 8);
+    sovData[40] = 2; // tier = Silver
 
-    const createSovTx = new anchor.web3.Transaction().add(
-      SystemProgram.createAccount({
-        fromPubkey: authority.publicKey,
-        newAccountPubkey: noKycSovKeypair.publicKey,
-        space: sovSpace,
-        lamports: sovRent,
-        programId: SystemProgram.programId,
-      })
-    );
-    await provider.sendAndConfirm(createSovTx, [authority, noKycSovKeypair]);
+    // Inject the sovereign identity mock into bankrun via setAccount
+    provider.context.setAccount(noKycSovKeypair.publicKey, {
+      lamports: 1_000_000_000,
+      data: sovData,
+      owner: SystemProgram.programId,
+      executable: false,
+    });
 
-    // Use a random account as "whitelist entry" (invalid)
+    // Use a random account as "whitelist entry" (invalid -- no valid KYC data)
     const fakeWl = Keypair.generate();
 
     const [noKycPosition] = PublicKey.findProgramAddressSync(
@@ -347,7 +509,7 @@ describe("exodus-core", () => {
         protocolConfig.toBuffer(),
         noKycUser.publicKey.toBuffer(),
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
     const config = await coreProgram.account.protocolConfig.fetch(protocolConfig);
@@ -362,17 +524,35 @@ describe("exodus-core", () => {
         noKycUser.publicKey.toBuffer(),
         nonceBuffer,
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
     // Create JPY ATA for noKycUser
-    const noKycJpyAta = await createAssociatedTokenAccount(
-      provider.connection,
-      noKycUser,
-      jpyMint,
-      noKycUser.publicKey
+    const noKycJpyAta = getAssociatedTokenAddressSync(jpyMint, noKycUser.publicKey);
+    const createNoKycAtaTx = new Transaction().add(
+      createAssociatedTokenAccountInstruction(
+        noKycUser.publicKey,
+        noKycJpyAta,
+        noKycUser.publicKey,
+        jpyMint,
+        TOKEN_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
     );
-    await mintTo(provider.connection, authority, jpyMint, noKycJpyAta, authority, 1_000_000_000);
+    await provider.sendAndConfirm(createNoKycAtaTx, [noKycUser]);
+
+    // Fund noKycUser JPY
+    const mintNoKycJpyTx = new Transaction().add(
+      createMintToInstruction(
+        jpyMint,
+        noKycJpyAta,
+        authority.publicKey,
+        1_000_000_000,
+        [],
+        TOKEN_PROGRAM_ID
+      )
+    );
+    await provider.sendAndConfirm(mintNoKycJpyTx, [authority]);
 
     try {
       await coreProgram.methods
@@ -402,35 +582,19 @@ describe("exodus-core", () => {
   // ─── Execute Conversion ───────────────────────────────────────────────────────
 
   it("executes conversion from pending JPY deposit", async () => {
-    // Fund the USDC vault (simulating keeper's Jupiter swap)
-    const keeperUsdcAta = await createAssociatedTokenAccount(
-      provider.connection,
-      keeper,
-      usdcMint,
-      keeper.publicKey
+    // Mint USDC directly to the protocol's USDC vault (simulating keeper's Jupiter swap)
+    const mintToVaultTx = new Transaction().add(
+      createMintToInstruction(
+        usdcMint,
+        usdcVault,
+        authority.publicKey,
+        100_000_000_000,   // 100,000 USDC
+        [],
+        TOKEN_PROGRAM_ID
+      )
     );
-    await mintTo(
-      provider.connection,
-      authority,
-      usdcMint,
-      keeperUsdcAta,
-      authority,
-      100_000_000_000 // 100,000 USDC
-    );
+    await provider.sendAndConfirm(mintToVaultTx, [authority]);
 
-    // Transfer USDC to protocol vault
-    // (In production, the keeper does this via Jupiter off-chain)
-    // For tests, we mint directly to the vault
-    await mintTo(
-      provider.connection,
-      authority,
-      usdcMint,
-      usdcVault,
-      authority,
-      100_000_000_000
-    );
-
-    const config = await coreProgram.account.protocolConfig.fetch(protocolConfig);
     const nonce = 1; // First deposit
     const nonceBuffer = Buffer.alloc(8);
     nonceBuffer.writeBigUInt64LE(BigInt(nonce));
@@ -442,7 +606,7 @@ describe("exodus-core", () => {
         user.publicKey.toBuffer(),
         nonceBuffer,
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
     const [conversionRecord] = PublicKey.findProgramAddressSync(
@@ -452,7 +616,7 @@ describe("exodus-core", () => {
         user.publicKey.toBuffer(),
         nonceBuffer,
       ],
-      coreProgram.programId
+      CORE_PROGRAM_ID
     );
 
     await coreProgram.methods
@@ -466,7 +630,7 @@ describe("exodus-core", () => {
         usdcVault,
         oracle: oracleKeypair.publicKey,
         yieldSource,
-        yieldDepositVault: tbillUsdcVault,
+        yieldDepositVault: usdcVault,
         conversionRecord,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
@@ -492,6 +656,22 @@ describe("exodus-core", () => {
   // ─── Direct USDC Deposit ──────────────────────────────────────────────────────
 
   it("deposits USDC directly", async () => {
+    // Derive T-Bill UserShares PDA for user
+    const [tbillUserShares] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("tbill_shares"),
+        tbillVaultConfig.toBuffer(),
+        user.publicKey.toBuffer(),
+      ],
+      TBILL_PROGRAM_ID
+    );
+
+    // Get or derive user's share token ATA for T-Bill
+    const userTbillSharesAta = getAssociatedTokenAddressSync(
+      tbillShareMint,
+      user.publicKey
+    );
+
     const depositAmount = new BN(5_000_000_000); // 5,000 USDC
 
     await coreProgram.methods
@@ -502,16 +682,16 @@ describe("exodus-core", () => {
         yieldSource,
         usdcMint,
         userUsdc: userUsdcAta,
-        depositVault: tbillUsdcVault,
+        depositVault: usdcVault,
         userPosition,
         whitelistEntry: whitelistEntryKeypair.publicKey,
         sovereignIdentity: sovereignIdentityKeypair.publicKey,
-        tbillVaultProgram: tbillProgram.programId,
+        tbillVaultProgram: TBILL_PROGRAM_ID,
         tbillVaultConfig,
         tbillShareMint,
         tbillUsdcVault,
-        userTbillSharesAta: userUsdcAta, // Placeholder
-        tbillUserShares: userPosition, // Placeholder
+        userTbillSharesAta,
+        tbillUserShares,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -538,7 +718,7 @@ describe("exodus-core", () => {
           protocolConfig,
           yieldSource,
           userPosition,
-          depositVault: tbillUsdcVault,
+          depositVault: usdcVault,
           userUsdc: userUsdcAta,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
@@ -609,7 +789,7 @@ describe("exodus-core", () => {
   it("updates protocol config", async () => {
     const params = {
       oracle: null,
-      conversionFeeBps: 50, // 0.50%
+      conversionFeeBps: 50,         // 0.50%
       managementFeeBps: null,
       performanceFeeBps: null,
     };

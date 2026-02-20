@@ -35,10 +35,10 @@ pub struct Withdraw<'info> {
     )]
     pub user_position: Account<'info, UserPosition>,
 
-    /// Yield source deposit vault (source of USDC)
+    /// Protocol USDC vault (source of USDC for withdrawals)
     #[account(
         mut,
-        constraint = deposit_vault.key() == yield_source.deposit_vault,
+        constraint = deposit_vault.key() == protocol_config.usdc_vault,
     )]
     pub deposit_vault: Account<'info, TokenAccount>,
 

@@ -26,21 +26,21 @@ pub struct ExecuteConversion<'info> {
         seeds = [ProtocolConfig::SEED],
         bump = protocol_config.bump,
     )]
-    pub protocol_config: Account<'info, ProtocolConfig>,
+    pub protocol_config: Box<Account<'info, ProtocolConfig>>,
 
     #[account(
         mut,
         constraint = pending_deposit.protocol_config == protocol_config.key() @ ExodusError::InvalidPendingDeposit,
         constraint = pending_deposit.status == DepositStatus::Pending @ ExodusError::InvalidPendingDeposit,
     )]
-    pub pending_deposit: Account<'info, PendingDeposit>,
+    pub pending_deposit: Box<Account<'info, PendingDeposit>>,
 
     #[account(
         mut,
         seeds = [UserPosition::SEED, protocol_config.key().as_ref(), pending_deposit.user.as_ref()],
         bump = user_position.bump,
     )]
-    pub user_position: Account<'info, UserPosition>,
+    pub user_position: Box<Account<'info, UserPosition>>,
 
     /// Protocol JPY vault
     /// CHECK: Validated against protocol_config
@@ -73,7 +73,7 @@ pub struct ExecuteConversion<'info> {
         ],
         bump = yield_source.bump,
     )]
-    pub yield_source: Account<'info, YieldSource>,
+    pub yield_source: Box<Account<'info, YieldSource>>,
 
     /// Yield source deposit vault (where USDC goes after conversion)
     #[account(
@@ -95,7 +95,7 @@ pub struct ExecuteConversion<'info> {
         ],
         bump,
     )]
-    pub conversion_record: Account<'info, ConversionRecord>,
+    pub conversion_record: Box<Account<'info, ConversionRecord>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

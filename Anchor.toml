@@ -18,14 +18,13 @@ exodus_tbill_vault = "2zwyHvFnB7TacEbTWwyceX2JkAm8hDFLdK1pxew33Wgz"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm run test"
+test = "bash scripts/test.sh"
 
 [test]
 startup_wait = 5000
 
 [test.validator]
-url = "https://api.devnet.solana.com"

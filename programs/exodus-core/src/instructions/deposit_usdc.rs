@@ -16,7 +16,7 @@ pub struct DepositUsdc<'info> {
         seeds = [ProtocolConfig::SEED],
         bump = protocol_config.bump,
     )]
-    pub protocol_config: Account<'info, ProtocolConfig>,
+    pub protocol_config: Box<Account<'info, ProtocolConfig>>,
 
     #[account(
         mut,
@@ -27,7 +27,7 @@ pub struct DepositUsdc<'info> {
         ],
         bump = yield_source.bump,
     )]
-    pub yield_source: Account<'info, YieldSource>,
+    pub yield_source: Box<Account<'info, YieldSource>>,
 
     pub usdc_mint: Account<'info, Mint>,
 
@@ -52,7 +52,7 @@ pub struct DepositUsdc<'info> {
         seeds = [UserPosition::SEED, protocol_config.key().as_ref(), user.key().as_ref()],
         bump,
     )]
-    pub user_position: Account<'info, UserPosition>,
+    pub user_position: Box<Account<'info, UserPosition>>,
 
     /// Accredit WhitelistEntry PDA
     /// CHECK: Manually validated
