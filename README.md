@@ -145,10 +145,16 @@ A self-contained yield vault with a clean interface — designed to be swapped f
 
 ### Compliance
 
-EXODUS reads two external programs on-chain for regulatory compliance:
+EXODUS uses a layered compliance stack combining on-chain and off-chain checks. The SDK exposes a unified compliance utility at `packages/sdk/src/compliance.ts`.
 
-- **Accredit** (transfer hooks) — Validates KYC status, jurisdiction (blocks sanctioned regions), expiry. The transfer hook fires automatically on Token-2022 JPY transfers.
-- **Sovereign Identity** (tier gating) — Maps identity verification tiers to monthly deposit caps:
+**On-chain (KYC / identity verification):**
+
+- **@accredit/sdk + @accredit/types** — On-chain KYC and identity verification. Validates KYC status, jurisdiction (blocks sanctioned regions), and credential expiry. The Accredit transfer hook fires automatically on Token-2022 JPY transfers.
+- **Sovereign Identity** (tier gating) — Maps identity verification tiers to monthly deposit caps.
+
+**Off-chain (sanctions / PEP screening):**
+
+- **@complr/sdk** — Off-chain sanctions and politically-exposed-person (PEP) screening. Key functions: `screenWallet` (check a wallet against sanctions/PEP lists) and `checkConversionCompliance` (verify a JPY-to-USDC conversion is permitted before execution).
 
 | Tier | Monthly JPY Limit | Monthly USDC Limit |
 |---|---|---|
@@ -178,6 +184,7 @@ The `@exodus/sdk` package provides:
 - **PDA derivation** — All program account address derivation functions
 - **Instruction builders** — Low-level transaction instruction constructors
 - **Keeper bots** — `ConversionBot` (polls pending JPY→USDC conversions) and `NavUpdater` (cranks yield accrual)
+- **Compliance** (`compliance.ts`) — Unified compliance checks combining on-chain Accredit KYC verification with off-chain Complr sanctions/PEP screening
 - **Utilities** — Tier limit checks, share/NAV math, yield projections
 
 ## Development
@@ -210,7 +217,7 @@ cd app && pnpm dev
 
 - **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 with transfer hooks for automatic compliance enforcement. USDC uses standard SPL Token.
 - **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing.
-- **Read-only compliance** — Rather than CPI to Accredit/Sovereign, the program deserializes their PDA accounts directly. Simpler, cheaper, and the transfer hook handles enforcement automatically.
+- **Read-only compliance + off-chain screening** — On-chain, the program deserializes Accredit/Sovereign PDA accounts directly (no CPI). Off-chain, `@complr/sdk` provides sanctions/PEP screening via `screenWallet` and `checkConversionCompliance` before transactions are submitted.
 - **Swappable yield sources** — The `YieldSource` abstraction supports multiple strategies. The mock T-Bill vault can be replaced with real protocols without changing core logic.
 - **Oracle with staleness check** — Simplified PriceFeed PDA with 300-second staleness threshold. Designed for migration to Pyth or Switchboard.
 
