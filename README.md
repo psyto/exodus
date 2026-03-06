@@ -156,6 +156,14 @@ EXODUS uses a layered compliance stack combining on-chain and off-chain checks. 
 
 - **@complr/sdk** — Off-chain sanctions and politically-exposed-person (PEP) screening. Key functions: `screenWallet` (check a wallet against sanctions/PEP lists) and `checkConversionCompliance` (verify a JPY-to-USDC conversion is permitted before execution).
 
+**Stratum data structures (`@stratum/core`):**
+
+- **Batch KYC verification** — `buildKycBatchTree()` builds a `MerkleTree` from KYC-verified user records (each leaf encodes `wallet:kycLevel:tier`). `getKycProof()` generates a merkle proof for a single user's KYC status, enabling batch verification without loading individual KYC PDAs.
+- **Conversion limit tracking** — `createConversionLimitTracker()` creates a compact `Bitfield` where each bit represents a user slot, letting the keeper bot check monthly JPY→USDC conversion limit status before batching conversions. `restoreConversionTracker()` restores a tracker from stored bytes.
+- **Conversion history auditing** — `buildConversionHistoryTree()` builds a `MerkleTree` of completed JPY→USDC conversion records (each leaf encodes `wallet:jpyAmount:usdcAmount:rate:timestamp`), enabling compact proofs that a specific conversion occurred for regulatory reporting and dispute resolution.
+
+All Stratum utilities are exported from `packages/sdk/src/stratum-utils.ts`.
+
 | Tier | Monthly JPY Limit | Monthly USDC Limit |
 |---|---|---|
 | Bronze | 500,000 | 3,500 |
@@ -185,6 +193,7 @@ The `@exodus/sdk` package provides:
 - **Instruction builders** — Low-level transaction instruction constructors
 - **Keeper bots** — `ConversionBot` (polls pending JPY→USDC conversions) and `NavUpdater` (cranks yield accrual)
 - **Compliance** (`compliance.ts`) — Unified compliance checks combining on-chain Accredit KYC verification with off-chain Complr sanctions/PEP screening
+- **Stratum utilities** (`stratum-utils.ts`) — Batch KYC merkle proofs, conversion limit bitfield tracking, and conversion history audit trees powered by `@stratum/core`
 - **Utilities** — Tier limit checks, share/NAV math, yield projections
 
 ## Development
@@ -218,6 +227,7 @@ cd app && pnpm dev
 - **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 with transfer hooks for automatic compliance enforcement. USDC uses standard SPL Token.
 - **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing.
 - **Read-only compliance + off-chain screening** — On-chain, the program deserializes Accredit/Sovereign PDA accounts directly (no CPI). Off-chain, `@complr/sdk` provides sanctions/PEP screening via `screenWallet` and `checkConversionCompliance` before transactions are submitted.
+- **Stratum-backed batch verification** — `@stratum/core` merkle trees enable batch KYC verification (avoiding per-user PDA lookups) and conversion history audit proofs. Bitfields provide compact conversion limit tracking for keeper bots.
 - **Swappable yield sources** — The `YieldSource` abstraction supports multiple strategies. The mock T-Bill vault can be replaced with real protocols without changing core logic.
 - **Oracle with staleness check** — Simplified PriceFeed PDA with 300-second staleness threshold. Designed for migration to Pyth or Switchboard.
 
