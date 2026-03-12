@@ -56,7 +56,7 @@ The codebase confirms this gap: the test helper (`tests/helpers/setup.ts`) creat
 
 The vault is purely simulated. `accrue_yield()` computes `nav × apy × elapsed_time` — it holds no real treasury bonds. Connecting to real yield sources (Ondo OUSG, Backed bIB01, Superstate USTB) requires:
 
-- Separate KYC/KYB by those issuers (EXODUS's proprietary KYC is insufficient)
+- Separate KYC/KYB by those issuers (EXODUS's integration with Accredit is insufficient on its own)
 - API or whitelist integration with regulated entities
 - Compliance with each issuer's accreditation requirements
 
@@ -79,7 +79,7 @@ The following claims in the README were verified against the codebase:
 | "Accredit transfer hook fires automatically on Token-2022 JPY transfers" | **Incorrect.** The program manually deserializes Accredit PDAs in each deposit instruction. No TransferHook extension is implemented. (Fixed in README as of this assessment.) |
 | KYC validation is mock | **Partially incorrect.** The validation logic (active status, expiry, jurisdiction checks) is real Accredit PDA deserialization. The test data is mock, not the validation code. |
 | Tiered deposit limits enforced on-chain | **Correct.** `require!` macros in `deposit_jpy.rs` and `deposit_usdc.rs` enforce tier-based monthly limits. |
-| Stratum integration is on-chain | **Incorrect.** `@stratum/core` merkle trees and bitfields are SDK-side tools for keeper bots, not on-chain constraints. |
+| Stratum integration is on-chain | **Incorrect.** [Stratum](https://github.com/psyto/stratum) merkle trees and bitfields are SDK-side tools for keeper bots, not on-chain constraints. |
 | 16 integration tests pass | **Correct.** 10 exodus-core + 6 tbill-vault tests using anchor-bankrun. |
 
 ---
@@ -92,7 +92,7 @@ If users wish to receive JPY, the reverse conversion (USDC→JPY) incurs slippag
 
 ### Counterparty Risk
 
-The mock nature of the T-Bill Vault is a significant blind spot. Real yield sources have their own accreditation requirements — EXODUS's KYC alone is insufficient.
+The mock nature of the T-Bill Vault is a significant blind spot. Real yield sources have their own accreditation requirements — EXODUS's integration with [Accredit](https://github.com/psyto/accredit) alone is insufficient for third-party issuers like Ondo or Backed, which require their own KYC/KYB processes.
 
 ### Asset Segregation
 
@@ -121,9 +121,9 @@ Target corporations (effective tax rate ~30%) rather than individuals burdened b
 
 Instead of building a proprietary vault, seek formal integration (API/whitelist) with already regulated entities like Ondo Finance or Backed.
 
-### 4. Compliance Stack as Standalone Value
+### 4. Leverage Standalone Compliance Stack
 
-The Accredit + Complr + Stratum integration pattern (on-chain KYC validation + off-chain sanctions screening + batch merkle proofs) is reusable for any regulated Solana protocol. Consider extracting it as a standalone compliance framework.
+The compliance projects integrated by EXODUS — [Accredit](https://github.com/psyto/accredit) (on-chain KYC), [Complr](https://github.com/psyto/complr) (off-chain sanctions screening), and [Stratum](https://github.com/psyto/stratum) (batch merkle proofs / bitfields) — are already standalone repositories. They can be reused independently for any regulated Solana protocol, which increases their value beyond this single PoC.
 
 ---
 

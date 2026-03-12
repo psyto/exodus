@@ -21,7 +21,7 @@ This is a **working technical prototype** — not a deployable product. The Sola
 - 16 passing integration tests covering deposits, conversions, withdrawals, yield accrual, and access control
 - TypeScript SDK with client, PDA helpers, instruction builders, and keeper bots
 - Next.js 15 dashboard with Japanese/English support, wallet connection, and all dashboard pages
-- On-chain compliance integration points (Accredit KYC + Sovereign Identity tiers)
+- On-chain compliance via standalone external projects ([Accredit](https://github.com/psyto/accredit) KYC, [Complr](https://github.com/psyto/complr) sanctions screening, [Stratum](https://github.com/psyto/stratum) batch verification)
 
 **What's mock / simulated:**
 - The T-Bill vault accrues yield based on a configurable APY and elapsed time — it doesn't hold real T-Bills
@@ -49,7 +49,7 @@ For the economics to truly work, the protocol would need regulatory recognition 
 
 ### 3. JPY stablecoins on Solana don't exist yet
 
-The megabank stablecoin projects (MUFG Progmat, etc.) are mostly on Ethereum or private/permissioned chains. There is no widely available regulated JPY stablecoin on Solana today. EXODUS's Token-2022 transfer hook integration assumes one will exist — but that's an assumption, not a certainty.
+The megabank stablecoin projects (MUFG Progmat, etc.) are mostly on Ethereum or private/permissioned chains. There is no widely available regulated JPY stablecoin on Solana today. EXODUS's Token-2022 integration assumes one will exist — but that's an assumption, not a certainty.
 
 ### 4. The T-Bill vault is mock
 
@@ -84,7 +84,7 @@ The smart contracts have not been audited. Any protocol handling real funds woul
 
 ```
 1. Deposit JPY stablecoin
-   └─ KYC verified via Accredit transfer hooks
+   └─ KYC verified via Accredit PDA validation
    └─ Deposit limits enforced by Sovereign Identity tier
 
 2. Keeper converts JPY → USDC
@@ -145,22 +145,23 @@ A self-contained yield vault with a clean interface — designed to be swapped f
 
 ### Compliance
 
-EXODUS uses a layered compliance stack combining on-chain and off-chain checks. The SDK exposes a unified compliance utility at `packages/sdk/src/compliance.ts`.
+EXODUS integrates three standalone external projects for its compliance stack. The SDK exposes a unified compliance utility at `packages/sdk/src/compliance.ts`.
 
 **On-chain (KYC / identity verification):**
 
-- **@accredit/sdk + @accredit/types** — On-chain KYC and identity verification. Validates KYC status, jurisdiction (blocks sanctioned regions), and credential expiry. The program deserializes Accredit `WhitelistEntry` and `SovereignIdentity` PDAs directly in each deposit instruction — this is manual PDA validation, not a Token-2022 transfer hook.
-- **Sovereign Identity** (tier gating) — Maps identity verification tiers to monthly deposit caps.
+- **[Accredit](https://github.com/psyto/accredit)** (`@accredit/sdk`, `@accredit/types`) — Standalone on-chain KYC and identity verification protocol. EXODUS deserializes Accredit `WhitelistEntry` and `SovereignIdentity` PDAs directly in each deposit instruction to validate KYC status, jurisdiction (blocks sanctioned regions), and credential expiry. This is manual PDA validation, not a Token-2022 transfer hook.
+- **Sovereign Identity** (tier gating) — Maps Accredit identity verification tiers to monthly deposit caps.
 
 **Off-chain (sanctions / PEP screening):**
 
-- **@complr/sdk** — Off-chain sanctions and politically-exposed-person (PEP) screening. Key functions: `screenWallet` (check a wallet against sanctions/PEP lists) and `checkConversionCompliance` (verify a JPY-to-USDC conversion is permitted before execution).
+- **[Complr](https://github.com/psyto/complr)** (`@complr/sdk`) — Standalone off-chain sanctions and politically-exposed-person (PEP) screening service. EXODUS uses `screenWallet` (check a wallet against sanctions/PEP lists) and `checkConversionCompliance` (verify a JPY-to-USDC conversion is permitted before execution).
 
-**Stratum data structures (`@stratum/core`):**
+**Batch data structures (SDK-side, not on-chain):**
 
-- **Batch KYC verification** — `buildKycBatchTree()` builds a `MerkleTree` from KYC-verified user records (each leaf encodes `wallet:kycLevel:tier`). `getKycProof()` generates a merkle proof for a single user's KYC status, enabling batch verification without loading individual KYC PDAs.
-- **Conversion limit tracking** — `createConversionLimitTracker()` creates a compact `Bitfield` where each bit represents a user slot, letting the keeper bot check monthly JPY→USDC conversion limit status before batching conversions. `restoreConversionTracker()` restores a tracker from stored bytes.
-- **Conversion history auditing** — `buildConversionHistoryTree()` builds a `MerkleTree` of completed JPY→USDC conversion records (each leaf encodes `wallet:jpyAmount:usdcAmount:rate:timestamp`), enabling compact proofs that a specific conversion occurred for regulatory reporting and dispute resolution.
+- **[Stratum](https://github.com/psyto/stratum)** (`@stratum/core`) — Standalone merkle tree and bitfield library. EXODUS uses it in the SDK layer (not on-chain) for:
+  - **Batch KYC verification** — `buildKycBatchTree()` builds a `MerkleTree` from KYC-verified user records, enabling batch verification without loading individual KYC PDAs.
+  - **Conversion limit tracking** — `createConversionLimitTracker()` creates a compact `Bitfield` for keeper bots to check monthly conversion limits before batching.
+  - **Conversion history auditing** — `buildConversionHistoryTree()` builds a `MerkleTree` of conversion records for regulatory reporting and dispute resolution.
 
 All Stratum utilities are exported from `packages/sdk/src/stratum-utils.ts`.
 
@@ -192,8 +193,8 @@ The `@exodus/sdk` package provides:
 - **PDA derivation** — All program account address derivation functions
 - **Instruction builders** — Low-level transaction instruction constructors
 - **Keeper bots** — `ConversionBot` (polls pending JPY→USDC conversions) and `NavUpdater` (cranks yield accrual)
-- **Compliance** (`compliance.ts`) — Unified compliance checks combining on-chain Accredit KYC verification with off-chain Complr sanctions/PEP screening
-- **Stratum utilities** (`stratum-utils.ts`) — Batch KYC merkle proofs, conversion limit bitfield tracking, and conversion history audit trees powered by `@stratum/core`
+- **Compliance** (`compliance.ts`) — Unified compliance checks combining on-chain [Accredit](https://github.com/psyto/accredit) KYC verification with off-chain [Complr](https://github.com/psyto/complr) sanctions/PEP screening
+- **Stratum utilities** (`stratum-utils.ts`) — Batch KYC merkle proofs, conversion limit bitfield tracking, and conversion history audit trees powered by [Stratum](https://github.com/psyto/stratum)
 - **Utilities** — Tier limit checks, share/NAV math, yield projections
 
 ## Development
@@ -224,10 +225,10 @@ cd app && pnpm dev
 
 ### Key Design Decisions
 
-- **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 with transfer hooks for automatic compliance enforcement. USDC uses standard SPL Token.
+- **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 for `transfer_checked` operations. Compliance is enforced via manual Accredit PDA validation in the deposit instructions, not via Token-2022 transfer hooks. USDC uses standard SPL Token.
 - **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing.
-- **Read-only compliance + off-chain screening** — On-chain, the program deserializes Accredit/Sovereign PDA accounts directly (no CPI). Off-chain, `@complr/sdk` provides sanctions/PEP screening via `screenWallet` and `checkConversionCompliance` before transactions are submitted.
-- **Stratum-backed batch verification** — `@stratum/core` merkle trees enable batch KYC verification (avoiding per-user PDA lookups) and conversion history audit proofs. Bitfields provide compact conversion limit tracking for keeper bots.
+- **Read-only compliance + off-chain screening** — On-chain, the program deserializes Accredit/Sovereign PDA accounts directly (no CPI). Off-chain, Complr provides sanctions/PEP screening via `screenWallet` and `checkConversionCompliance` before transactions are submitted. All three compliance projects (Accredit, Complr, Stratum) are standalone repositories integrated via `file:` dependencies.
+- **Stratum-backed batch verification (SDK-side)** — Stratum merkle trees enable batch KYC verification (avoiding per-user PDA lookups) and conversion history audit proofs. Bitfields provide compact conversion limit tracking for keeper bots. These operate in the SDK layer, not as on-chain constraints.
 - **Swappable yield sources** — The `YieldSource` abstraction supports multiple strategies. The mock T-Bill vault can be replaced with real protocols without changing core logic.
 - **Oracle with staleness check** — Simplified PriceFeed PDA with 300-second staleness threshold. Designed for migration to Pyth or Switchboard.
 
