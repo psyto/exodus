@@ -149,7 +149,7 @@ EXODUS uses a layered compliance stack combining on-chain and off-chain checks. 
 
 **On-chain (KYC / identity verification):**
 
-- **@accredit/sdk + @accredit/types** — On-chain KYC and identity verification. Validates KYC status, jurisdiction (blocks sanctioned regions), and credential expiry. The Accredit transfer hook fires automatically on Token-2022 JPY transfers.
+- **@accredit/sdk + @accredit/types** — On-chain KYC and identity verification. Validates KYC status, jurisdiction (blocks sanctioned regions), and credential expiry. The program deserializes Accredit `WhitelistEntry` and `SovereignIdentity` PDAs directly in each deposit instruction — this is manual PDA validation, not a Token-2022 transfer hook.
 - **Sovereign Identity** (tier gating) — Maps identity verification tiers to monthly deposit caps.
 
 **Off-chain (sanctions / PEP screening):**
@@ -233,6 +233,7 @@ cd app && pnpm dev
 
 ## Related
 
+- [Feasibility Assessment](docs/feasibility-assessment.md) — Regulatory, tax, and business viability analysis
 - [Stablebonds Analysis](docs/stablebonds-analysis.md) — Commentary on Etherfuse's "Stablebonds" thesis and implications for EXODUS
 
 ## License
