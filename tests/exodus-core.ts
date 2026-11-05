@@ -774,6 +774,63 @@ describe("exodus-core (bankrun)", () => {
     assert.ok(ys.navPerShare.toNumber() >= 1_000_000);
   });
 
+  it("rejects update_nav and set_keeper from a non-keeper, non-authority signer", async () => {
+    const stranger = Keypair.generate();
+
+    let failed = false;
+    try {
+      await coreProgram.methods
+        .updateNav()
+        .accounts({
+          keeper: stranger.publicKey,
+          protocolConfig,
+          yieldSource,
+          tbillVaultConfig,
+        })
+        .signers([stranger])
+        .rpc();
+    } catch (err: any) {
+      failed = true;
+      assert.match(err.toString(), /Unauthorized|6001/);
+    }
+    assert.ok(failed, "update_nav by a stranger should fail");
+
+    failed = false;
+    try {
+      await coreProgram.methods
+        .setKeeper(stranger.publicKey)
+        .accounts({ authority: stranger.publicKey, protocolConfig })
+        .signers([stranger])
+        .rpc();
+    } catch (err: any) {
+      failed = true;
+      assert.match(err.toString(), /Unauthorized|6001/);
+    }
+    assert.ok(failed, "set_keeper by a stranger should fail");
+
+    const config = await coreProgram.account.protocolConfig.fetch(protocolConfig);
+    assert.equal(config.keeper.toBase58(), keeper.publicKey.toBase58());
+  });
+
+  it("lets the authority change the keeper", async () => {
+    const next = Keypair.generate().publicKey;
+    await coreProgram.methods
+      .setKeeper(next)
+      .accounts({ authority: authority.publicKey, protocolConfig })
+      .signers([authority])
+      .rpc();
+    let config = await coreProgram.account.protocolConfig.fetch(protocolConfig);
+    assert.equal(config.keeper.toBase58(), next.toBase58());
+
+    await coreProgram.methods
+      .setKeeper(keeper.publicKey)
+      .accounts({ authority: authority.publicKey, protocolConfig })
+      .signers([authority])
+      .rpc();
+    config = await coreProgram.account.protocolConfig.fetch(protocolConfig);
+    assert.equal(config.keeper.toBase58(), keeper.publicKey.toBase58());
+  });
+
   // ─── Admin Operations ─────────────────────────────────────────────────────────
 
   it("pauses and resumes protocol", async () => {
