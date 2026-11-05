@@ -132,7 +132,7 @@ The main protocol program. Handles the full lifecycle:
 | `withdraw` | Burn shares, return USDC to user |
 | `claim_yield` | Withdraw accrued yield (performance fee deducted) |
 | `update_nav` | Keeper (`ProtocolConfig.keeper`, or the authority): sync NAV from the T-Bill `VaultConfig` PDA |
-| `update_protocol_config` | Admin: update fees, oracle, registry |
+| `update_protocol_config` | Admin: update fees and oracle |
 | `set_keeper` | Admin: set the keeper (also set at `initialize_protocol` via `params.keeper`) |
 | `pause_protocol` / `resume_protocol` | Emergency controls |
 
@@ -151,7 +151,9 @@ EXODUS integrates three standalone external projects for its compliance stack. T
 **On-chain (KYC / identity verification):**
 
 - **[Accredit](https://github.com/psyto/accredit)** (`@accredit/sdk`, `@accredit/types`) — Standalone on-chain KYC and identity verification protocol. EXODUS deserializes Accredit `WhitelistEntry` and `SovereignIdentity` PDAs directly in each deposit instruction to validate KYC status, jurisdiction (blocks sanctioned regions), and credential expiry. This is manual PDA validation, not a Token-2022 transfer hook.
-- **Sovereign Identity** (tier gating) — Maps Accredit identity verification tiers to monthly deposit caps.
+- **Sovereign Identity** (tier gating) — Maps Accredit identity verification tiers to monthly deposit caps. The identity is read at `["identity", user]` under `ProtocolConfig.sovereign_program`.
+
+Which Accredit entry is accepted: `deposit_jpy` and `deposit_usdc` derive the trusted registry as `["kyc_registry", jpy_mint]` under `ProtocolConfig.kyc_registry` (the Accredit program id), and accept only the `WhitelistEntry` at `["whitelist", registry, user]` whose `registry` field is that registry. The entry must belong to the depositing wallet, be active and not expired (expiry 0 = no expiry); US-jurisdiction entries are rejected. The SDK exports `findAccreditKycRegistryPda(jpyMint, accreditProgramId)` and `findAccreditWhitelistEntryPda(kycRegistry, wallet, accreditProgramId)`.
 
 **Off-chain (sanctions / PEP screening):**
 
@@ -224,9 +226,20 @@ anchor test
 cd app && pnpm dev
 ```
 
+### Setup and Deploy Order
+
+1. **Accredit first.** Deploy the Accredit program, and have the JPY stablecoin's issuer create the KYC registry for the JPY mint (`["kyc_registry", jpy_mint]`) and whitelist depositors. EXODUS trusts only that registry.
+2. Deploy `exodus-tbill-vault` and `exodus-core`, and initialize the T-Bill vault (`update_nav` reads its `["tbill_vault"]` `VaultConfig`).
+3. Run `initialize_protocol` once with `oracle`, `kyc_registry` (the Accredit program id), `sovereign_program`, the three fees and `keeper`.
+4. `register_yield_source`, then run `ConversionBot` / `NavUpdater` with the keeper keypair. `update_nav` and `execute_conversion` accept `ProtocolConfig.keeper` or the authority; the authority can change the keeper with `set_keeper` (SDK: `buildSetKeeperIx`).
+
+### Upgrading an Existing Deployment
+
+`ProtocolConfig` gained `keeper` (appended; `ProtocolConfig::LEN` is now 354 bytes) and `initialize_protocol` takes it as a param. A `ProtocolConfig` created by an older build is too small for the new program: recreate the protocol state on a fresh deployment. Clients must derive whitelist entries with the registry in the seeds, as above.
+
 ### Key Design Decisions
 
-- **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 for `transfer_checked` operations. Compliance is enforced via manual Accredit PDA validation in the deposit instructions, not via Token-2022 transfer hooks. USDC uses standard SPL Token.
+- **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 for `transfer_checked` operations (`deposit_jpy` accepts the Token-2022 or SPL Token program, so tests can use a classic SPL mint). Compliance is enforced via manual Accredit PDA validation in the deposit instructions, not via Token-2022 transfer hooks. USDC uses standard SPL Token.
 - **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing.
 - **Read-only compliance + off-chain screening** — On-chain, the program deserializes Accredit/Sovereign PDA accounts directly (no CPI). Off-chain, Complr provides sanctions/PEP screening via `screenWallet` and `checkConversionCompliance` before transactions are submitted. All three compliance projects (Accredit, Complr, Stratum) are standalone repositories integrated via `file:` dependencies.
 - **Stratum-backed batch verification (SDK-side)** — Stratum merkle trees enable batch KYC verification (avoiding per-user PDA lookups) and conversion history audit proofs. Bitfields provide compact conversion limit tracking for keeper bots. These operate in the SDK layer, not as on-chain constraints.
