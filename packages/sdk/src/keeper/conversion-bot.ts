@@ -1,5 +1,5 @@
 import { Program, BN } from "@coral-xyz/anchor";
-import { Connection, PublicKey, Keypair } from "@solana/web3.js";
+import { Connection, PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { DepositStatus } from "@exodus/types";
 import {
@@ -15,6 +15,9 @@ import {
  * ConversionBot watches for PendingDeposit accounts with status=Pending
  * and calls executeConversion on them. This is a keeper process that runs
  * off-chain and cranks the protocol's JPY-to-USDC conversion pipeline.
+ *
+ * `keeper` must be the protocol authority (ProtocolConfig.authority):
+ * exodus-core's execute_conversion rejects any other signer.
  */
 export class ConversionBot {
   private connection: Connection;
@@ -151,6 +154,15 @@ export class ConversionBot {
     const [jpyVault] = findJpyVaultPda(this.programId);
     const [usdcVault] = findUsdcVaultPda(this.programId);
 
+    const config: any = await (this.program.account as any).protocolConfig.fetch(configPda);
+    if (!config.authority.equals(this.keeper.publicKey)) {
+      throw new Error(
+        `[ConversionBot] keeper ${this.keeper.publicKey.toBase58()} is not the protocol authority ${config.authority.toBase58()}`
+      );
+    }
+    const [yieldSourcePda] = findYieldSourcePda(configPda, config.usdcMint, this.programId);
+    const yieldSource: any = await (this.program.account as any).yieldSource.fetch(yieldSourcePda);
+
     console.log(
       `[ConversionBot] Executing conversion for deposit ${pendingDepositPda.toBase58()} ` +
         `(user=${user.toBase58()}, nonce=${depositNonce})`
@@ -163,11 +175,14 @@ export class ConversionBot {
         protocolConfig: configPda,
         pendingDeposit: pendingDepositPda,
         userPosition: userPositionPda,
-        conversionRecord: conversionRecordPda,
-        user,
         jpyVault,
         usdcVault,
+        oracle: config.oracle,
+        yieldSource: yieldSourcePda,
+        yieldDepositVault: yieldSource.depositVault,
+        conversionRecord: conversionRecordPda,
         tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
       })
       .signers([this.keeper])
       .rpc();

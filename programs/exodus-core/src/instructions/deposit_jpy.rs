@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_2022::spl_token_2022;
+use anchor_spl::token_interface::TokenInterface;
 use exodus_types::{monthly_jpy_limit, DepositStatus};
 
 use crate::errors::ExodusError;
@@ -83,9 +84,9 @@ pub struct DepositJpy<'info> {
     )]
     pub sovereign_identity: AccountInfo<'info>,
 
-    /// Token-2022 program (for JPY transfer)
-    /// CHECK: Program ID check
-    pub token_2022_program: AccountInfo<'info>,
+    /// Token program for the JPY transfer: Token-2022, or SPL Token for a
+    /// classic test mint. Interface pins the key to one of those two programs.
+    pub token_2022_program: Interface<'info, TokenInterface>,
 
     pub system_program: Program<'info, System>,
 }

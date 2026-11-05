@@ -133,6 +133,14 @@ export class NavUpdater {
       return;
     }
 
+    // update_nav requires keeper == ProtocolConfig.authority (offset 8..40)
+    const authority = new PublicKey(configInfo.data.subarray(8, 40));
+    if (!authority.equals(this.keeper.publicKey)) {
+      throw new Error(
+        `[NavUpdater] keeper ${this.keeper.publicKey.toBase58()} is not the protocol authority ${authority.toBase58()}`
+      );
+    }
+
     // Parse the USDC mint from the config (offset: 8 discriminator + 32 authority + 32 jpyMint = 72)
     const usdcMint = new PublicKey(configInfo.data.subarray(72, 104));
 
@@ -161,7 +169,6 @@ export class NavUpdater {
           protocolConfig: configPda,
           yieldSource: yieldSourcePda,
           tbillVaultConfig,
-          tbillVaultProgram: this.tbillProgramId,
         })
         .signers([this.keeper])
         .rpc();

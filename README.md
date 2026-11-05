@@ -128,10 +128,10 @@ The main protocol program. Handles the full lifecycle:
 | `register_yield_source` | Link a yield strategy (e.g., T-Bill vault) |
 | `deposit_jpy` | Accept JPY with KYC check + tier limit → create PendingDeposit |
 | `deposit_usdc` | Direct USDC deposit → allocate to yield source |
-| `execute_conversion` | Keeper: read oracle, convert JPY→USDC, allocate to vault |
+| `execute_conversion` | Keeper (= protocol authority): read oracle, convert JPY→USDC, allocate to vault |
 | `withdraw` | Burn shares, return USDC to user |
 | `claim_yield` | Withdraw accrued yield (performance fee deducted) |
-| `update_nav` | Keeper: sync NAV from T-Bill vault |
+| `update_nav` | Keeper (= protocol authority): sync NAV from the T-Bill `VaultConfig` PDA |
 | `update_protocol_config` | Admin: update fees, oracle, registry |
 | `pause_protocol` / `resume_protocol` | Emergency controls |
 

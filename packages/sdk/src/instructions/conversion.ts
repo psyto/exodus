@@ -40,7 +40,8 @@ export interface BuildExecuteConversionAccounts {
  * @param program  - Anchor Program instance for exodus-core.
  * @param keeper   - The keeper wallet that triggers (and pays for) the
  *                   conversion (signer / fee-payer for the ConversionRecord
- *                   account).
+ *                   account). Must be the protocol authority
+ *                   (ProtocolConfig.authority).
  * @param accounts - Remaining account addresses that cannot be derived from
  *                   seeds alone.
  */
