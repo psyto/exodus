@@ -91,49 +91,78 @@ pub struct DepositJpy<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Minimal struct to read WhitelistEntry data (Accredit PDA).
-/// Layout after 8-byte Anchor discriminator:
-/// - owner: Pubkey (32)
-/// - registry: Pubkey (32)
-/// - is_active: bool (1)
-/// - kyc_level: u8 (1)
-/// - jurisdiction: u8 (1)
-/// - expires_at: i64 (8)
-fn validate_kyc(whitelist_entry: &AccountInfo, user: &Pubkey) -> Result<()> {
+// Accredit transfer-hook WhitelistEntry layout (after the 8-byte discriminator):
+// wallet(32) registry(32) kyc_level(1) jurisdiction(1) kyc_hash(32) is_active(1)
+// daily_limit(8) daily_volume(8) volume_reset_time(8) verified_at(8)
+// expiry_timestamp(8) last_activity(8) created_at(8) bump(1)
+const WL_OFFSET_WALLET: usize = 8;
+const WL_OFFSET_REGISTRY: usize = 8 + 32; // 40
+const WL_OFFSET_JURISDICTION: usize = 8 + 32 + 32 + 1; // 73
+const WL_OFFSET_IS_ACTIVE: usize = 8 + 32 + 32 + 1 + 1 + 32; // 106
+const WL_OFFSET_EXPIRY: usize = WL_OFFSET_IS_ACTIVE + 1 + 8 + 8 + 8 + 8; // 139
+const WL_MIN_SIZE: usize = WL_OFFSET_EXPIRY + 8 + 8 + 8 + 1; // 164
+/// Accredit Jurisdiction::Usa
+const JURISDICTION_USA: u8 = 4;
+/// Accredit KycRegistry PDA prefix: ["kyc_registry", mint]
+pub const KYC_REGISTRY_SEED: &[u8] = b"kyc_registry";
+
+// Sovereign SovereignIdentity layout: owner(32) created_at(8) 5 authorities(32 each)
+// 6 scores(u16 each) tier(u8) ...
+const SOV_OFFSET_OWNER: usize = 8;
+const SOV_OFFSET_TIER: usize = 8 + 32 + 8 + 32 * 5 + 2 * 6; // 220
+
+/// The registry whose whitelist entries the protocol trusts: Accredit's
+/// KycRegistry PDA for the protocol's JPY mint, under the configured KYC program.
+pub(crate) fn trusted_kyc_registry(config: &ProtocolConfig) -> Pubkey {
+    Pubkey::find_program_address(
+        &[KYC_REGISTRY_SEED, config.jpy_mint.as_ref()],
+        &config.kyc_registry,
+    )
+    .0
+}
+
+/// Validate an Accredit WhitelistEntry (owner program and PDA are pinned by
+/// the account constraints).
+pub(crate) fn validate_kyc(whitelist_entry: &AccountInfo, user: &Pubkey, registry: &Pubkey) -> Result<()> {
     let data = whitelist_entry.try_borrow_data()?;
-    require!(data.len() >= 83, ExodusError::KycRequired);
+    require!(data.len() >= WL_MIN_SIZE, ExodusError::KycRequired);
 
-    // Skip 8-byte discriminator
-    let owner = Pubkey::try_from(&data[8..40]).map_err(|_| ExodusError::InvalidAccountData)?;
-    require!(owner == *user, ExodusError::KycRequired);
+    let wallet = Pubkey::try_from(&data[WL_OFFSET_WALLET..WL_OFFSET_WALLET + 32])
+        .map_err(|_| ExodusError::InvalidAccountData)?;
+    require!(wallet == *user, ExodusError::KycRequired);
 
-    let is_active = data[72] != 0;
-    require!(is_active, ExodusError::KycRequired);
+    let entry_registry = Pubkey::try_from(&data[WL_OFFSET_REGISTRY..WL_OFFSET_REGISTRY + 32])
+        .map_err(|_| ExodusError::InvalidAccountData)?;
+    require!(entry_registry == *registry, ExodusError::KycRequired);
 
-    let jurisdiction = data[74];
-    // jurisdiction 0 = Japan, 1 = USA, etc. — Block USA (1)
-    require!(jurisdiction != 1, ExodusError::JurisdictionRestricted);
+    require!(data[WL_OFFSET_IS_ACTIVE] == 1, ExodusError::KycRequired);
 
-    let expires_at = i64::from_le_bytes(data[75..83].try_into().unwrap());
-    let now = Clock::get()?.unix_timestamp;
-    require!(expires_at > now, ExodusError::KycExpired);
+    require!(
+        data[WL_OFFSET_JURISDICTION] != JURISDICTION_USA,
+        ExodusError::JurisdictionRestricted
+    );
+
+    // Accredit semantics: expiry 0 = no expiry
+    let expires_at = i64::from_le_bytes(
+        data[WL_OFFSET_EXPIRY..WL_OFFSET_EXPIRY + 8].try_into().unwrap(),
+    );
+    if expires_at != 0 {
+        require!(expires_at > Clock::get()?.unix_timestamp, ExodusError::KycExpired);
+    }
 
     Ok(())
 }
 
-/// Read sovereign tier from SovereignIdentity PDA.
-/// Layout after 8-byte discriminator:
-/// - owner: Pubkey (32)
-/// - ... (various fields)
-/// - tier: u8 (at offset 40)
-fn read_sovereign_tier(sovereign_identity: &AccountInfo, user: &Pubkey) -> Result<u8> {
+/// Read the tier from a Sovereign SovereignIdentity PDA.
+pub(crate) fn read_sovereign_tier(sovereign_identity: &AccountInfo, user: &Pubkey) -> Result<u8> {
     let data = sovereign_identity.try_borrow_data()?;
-    require!(data.len() >= 41, ExodusError::SovereignIdentityNotFound);
+    require!(data.len() > SOV_OFFSET_TIER, ExodusError::SovereignIdentityNotFound);
 
-    let owner = Pubkey::try_from(&data[8..40]).map_err(|_| ExodusError::InvalidAccountData)?;
+    let owner = Pubkey::try_from(&data[SOV_OFFSET_OWNER..SOV_OFFSET_OWNER + 32])
+        .map_err(|_| ExodusError::InvalidAccountData)?;
     require!(owner == *user, ExodusError::SovereignIdentityNotFound);
 
-    Ok(data[40])
+    Ok(data[SOV_OFFSET_TIER])
 }
 
 pub fn handler(ctx: Context<DepositJpy>, jpy_amount: u64, min_usdc_out: u64) -> Result<()> {
@@ -142,7 +171,11 @@ pub fn handler(ctx: Context<DepositJpy>, jpy_amount: u64, min_usdc_out: u64) -> 
     require!(jpy_amount > 0, ExodusError::ZeroDeposit);
 
     // 1. Validate KYC via Accredit WhitelistEntry
-    validate_kyc(&ctx.accounts.whitelist_entry, &ctx.accounts.user.key())?;
+    validate_kyc(
+        &ctx.accounts.whitelist_entry,
+        &ctx.accounts.user.key(),
+        &trusted_kyc_registry(config),
+    )?;
 
     // 2. Read Sovereign tier and check monthly limit
     let tier = read_sovereign_tier(&ctx.accounts.sovereign_identity, &ctx.accounts.user.key())?;

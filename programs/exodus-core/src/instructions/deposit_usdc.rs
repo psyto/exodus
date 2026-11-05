@@ -5,7 +5,9 @@ use exodus_types::{allowed_yield_sources, monthly_usdc_limit};
 use crate::errors::ExodusError;
 use crate::events::DirectUsdcDeposit;
 use crate::state::{ProtocolConfig, UserPosition, YieldSource};
-use crate::instructions::deposit_jpy::{SOVEREIGN_IDENTITY_SEED, WHITELIST_SEED};
+use crate::instructions::deposit_jpy::{
+    read_sovereign_tier, trusted_kyc_registry, validate_kyc, SOVEREIGN_IDENTITY_SEED, WHITELIST_SEED,
+};
 
 #[derive(Accounts)]
 pub struct DepositUsdc<'info> {
@@ -118,30 +120,16 @@ pub fn handler(ctx: Context<DepositUsdc>, usdc_amount: u64) -> Result<()> {
     require!(usdc_amount >= ys.min_deposit, ExodusError::BelowMinDeposit);
 
     // KYC check (same pattern as deposit_jpy)
-    let wl_data = ctx.accounts.whitelist_entry.try_borrow_data()?;
-    require!(wl_data.len() >= 83, ExodusError::KycRequired);
-    let wl_owner =
-        Pubkey::try_from(&wl_data[8..40]).map_err(|_| ExodusError::InvalidAccountData)?;
-    require!(wl_owner == ctx.accounts.user.key(), ExodusError::KycRequired);
-    require!(wl_data[72] != 0, ExodusError::KycRequired);
-    require!(wl_data[74] != 1, ExodusError::JurisdictionRestricted);
-    let wl_expires = i64::from_le_bytes(wl_data[75..83].try_into().unwrap());
+    validate_kyc(
+        &ctx.accounts.whitelist_entry,
+        &ctx.accounts.user.key(),
+        &trusted_kyc_registry(config),
+    )?;
     let now = Clock::get()?.unix_timestamp;
-    require!(wl_expires > now, ExodusError::KycExpired);
-    drop(wl_data);
 
     // Sovereign tier check
-    let sov_data = ctx.accounts.sovereign_identity.try_borrow_data()?;
-    require!(sov_data.len() >= 41, ExodusError::SovereignIdentityNotFound);
-    let sov_owner =
-        Pubkey::try_from(&sov_data[8..40]).map_err(|_| ExodusError::InvalidAccountData)?;
-    require!(
-        sov_owner == ctx.accounts.user.key(),
-        ExodusError::SovereignIdentityNotFound
-    );
-    let tier = sov_data[40];
+    let tier = read_sovereign_tier(&ctx.accounts.sovereign_identity, &ctx.accounts.user.key())?;
     require!(tier > 0, ExodusError::TierTooLow);
-    drop(sov_data);
 
     // Check yield source type allowed for tier
     let allowed = allowed_yield_sources(tier);

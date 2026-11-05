@@ -73,6 +73,12 @@ describe("exodus-core (bankrun)", () => {
     noKycUser = Keypair.generate();
     oracleKeypair = Keypair.generate();
     kycProgramId = Keypair.generate().publicKey;
+    // JPY mint key is needed up front: the trusted registry is ["kyc_registry", jpy_mint]
+    const jpyMintKeypair = Keypair.generate();
+    const [trustedRegistry] = PublicKey.findProgramAddressSync(
+      [Buffer.from("kyc_registry"), jpyMintKeypair.publicKey.toBuffer()],
+      kycProgramId
+    );
     sovereignProgramId = Keypair.generate().publicKey;
     [whitelistEntry] = PublicKey.findProgramAddressSync(
       [Buffer.from("whitelist"), user.publicKey.toBuffer()],
@@ -87,22 +93,23 @@ describe("exodus-core (bankrun)", () => {
     // 2. Build mock account data buffers
     // ------------------------------------------------------------------
 
-    // --- Accredit WhitelistEntry (83 bytes) for `user` ---
-    const wlData = Buffer.alloc(83);
-    wlData.writeBigUInt64LE(0n, 0);                          // [0..8]   discriminator
-    user.publicKey.toBuffer().copy(wlData, 8);                // [8..40]  owner = user
-    PublicKey.default.toBuffer().copy(wlData, 40);            // [40..72] registry = default
-    wlData[72] = 1;                                           // is_active
-    wlData[73] = 2;                                           // kyc_level
-    wlData[74] = 0;                                           // jurisdiction = Japan
+    // --- Accredit WhitelistEntry (164 bytes, transfer-hook layout) for `user` ---
+    const wlData = Buffer.alloc(164);
+    wlData.writeBigUInt64LE(0n, 0);                          // [0..8]     discriminator
+    user.publicKey.toBuffer().copy(wlData, 8);                // [8..40]    wallet = user
+    trustedRegistry.toBuffer().copy(wlData, 40);              // [40..72]   registry = trusted registry
+    wlData[72] = 2;                                           // [72]       kyc_level = Enhanced
+    wlData[73] = 0;                                           // [73]       jurisdiction = Japan
+                                                              // [74..106]  kyc_hash (zeros)
+    wlData[106] = 1;                                          // [106]      is_active
     const expiresAt = BigInt(Math.floor(Date.now() / 1000)) + 365n * 86400n;
-    wlData.writeBigInt64LE(expiresAt, 75);                    // [75..83] expires_at
+    wlData.writeBigInt64LE(expiresAt, 139);                   // [139..147] expiry_timestamp
 
-    // --- Sovereign Identity (41 bytes) for `user` ---
-    const sovData = Buffer.alloc(41);
+    // --- Sovereign Identity (Sovereign layout, tier at 220) for `user` ---
+    const sovData = Buffer.alloc(230);
     sovData.writeBigUInt64LE(0n, 0);                          // [0..8]   discriminator
     user.publicKey.toBuffer().copy(sovData, 8);               // [8..40]  owner = user
-    sovData[40] = 2;                                          // tier = Silver
+    sovData[220] = 2;                                         // [220]    tier = Silver
 
     // --- Oracle PriceFeed (56 bytes) ---
     const oracleData = Buffer.alloc(56);
@@ -213,7 +220,6 @@ describe("exodus-core (bankrun)", () => {
 
     // Create USDC mint keypair and JPY mint keypair
     const usdcMintKeypair = Keypair.generate();
-    const jpyMintKeypair = Keypair.generate();
     usdcMint = usdcMintKeypair.publicKey;
     jpyMint = jpyMintKeypair.publicKey;
 
@@ -497,11 +503,11 @@ describe("exodus-core (bankrun)", () => {
   it("rejects JPY deposit without KYC", async () => {
     // Create a sovereign identity for noKycUser but NO whitelist entry
     const noKycSovKeypair = Keypair.generate();
-    const sovSpace = 41;
+    const sovSpace = 230;
     const sovData = Buffer.alloc(sovSpace);
     sovData.writeBigUInt64LE(0n, 0);
     noKycUser.publicKey.toBuffer().copy(sovData, 8);
-    sovData[40] = 2; // tier = Silver
+    sovData[220] = 2; // tier = Silver (Sovereign layout offset 220)
 
     // Inject the sovereign identity mock into bankrun via setAccount
     provider.context.setAccount(noKycSovKeypair.publicKey, {
