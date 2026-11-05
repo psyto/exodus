@@ -17,6 +17,8 @@ export interface InitializeProtocolParams {
   conversionFeeBps: number;
   managementFeeBps: number;
   performanceFeeBps: number;
+  /** Keeper allowed to run update_nav / execute_conversion */
+  keeper: PublicKey;
 }
 
 export interface BuildInitializeProtocolAccounts {
@@ -59,6 +61,7 @@ export async function buildInitializeProtocolIx(
       conversionFeeBps: params.conversionFeeBps,
       managementFeeBps: params.managementFeeBps,
       performanceFeeBps: params.performanceFeeBps,
+      keeper: params.keeper,
     })
     .accounts({
       authority,
@@ -137,6 +140,27 @@ export async function buildRegisterYieldSourceIx(
       yieldSource,
       systemProgram: SystemProgram.programId,
     })
+    .instruction();
+}
+
+// ─── setKeeper ───────────────────────────────────────────────────────────────
+
+/**
+ * Build a `setKeeper` TransactionInstruction (authority only).
+ *
+ * @param program   - Anchor Program instance for exodus-core.
+ * @param authority - The protocol authority (signer).
+ * @param newKeeper - Keeper allowed to run update_nav / execute_conversion.
+ */
+export async function buildSetKeeperIx(
+  program: Program,
+  authority: PublicKey,
+  newKeeper: PublicKey,
+): Promise<TransactionInstruction> {
+  const [protocolConfig] = findProtocolConfigPda(program.programId);
+  return program.methods
+    .setKeeper(newKeeper)
+    .accounts({ authority, protocolConfig })
     .instruction();
 }
 

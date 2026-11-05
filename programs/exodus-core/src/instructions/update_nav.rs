@@ -14,9 +14,9 @@ const TBILL_NAV_OFFSET: usize = 8 + 32 + 32 + 32 + 32 + 2 + 8 + 8;
 
 #[derive(Accounts)]
 pub struct UpdateNav<'info> {
-    /// Keeper that triggers the NAV update (the protocol authority)
+    /// Keeper that triggers the NAV update (ProtocolConfig.keeper or authority)
     #[account(
-        constraint = keeper.key() == protocol_config.authority @ ExodusError::Unauthorized,
+        constraint = protocol_config.is_keeper(&keeper.key()) @ ExodusError::Unauthorized,
     )]
     pub keeper: Signer<'info>,
 

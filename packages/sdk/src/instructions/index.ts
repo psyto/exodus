@@ -17,6 +17,7 @@ export {
 
 export {
   buildInitializeProtocolIx,
+  buildSetKeeperIx,
   buildRegisterYieldSourceIx,
   buildUpdateProtocolConfigIx,
   buildUpdateYieldSourceIx,

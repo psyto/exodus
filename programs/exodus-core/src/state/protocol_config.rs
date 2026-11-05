@@ -46,6 +46,8 @@ pub struct ProtocolConfig {
     pub jpy_vault_bump: u8,
     /// USDC vault PDA bump
     pub usdc_vault_bump: u8,
+    /// Keeper allowed to run update_nav / execute_conversion (set by authority)
+    pub keeper: Pubkey,
 }
 
 impl ProtocolConfig {
@@ -70,9 +72,15 @@ impl ProtocolConfig {
         + 8   // updated_at
         + 1   // bump
         + 1   // jpy_vault_bump
-        + 1;  // usdc_vault_bump
+        + 1   // usdc_vault_bump
+        + 32; // keeper
 
     pub const SEED: &'static [u8] = b"exodus_config";
     pub const JPY_VAULT_SEED: &'static [u8] = b"exodus_jpy_vault";
     pub const USDC_VAULT_SEED: &'static [u8] = b"exodus_usdc_vault";
+
+    /// The configured keeper, or the authority, may run keeper instructions.
+    pub fn is_keeper(&self, key: &Pubkey) -> bool {
+        *key == self.keeper || *key == self.authority
+    }
 }

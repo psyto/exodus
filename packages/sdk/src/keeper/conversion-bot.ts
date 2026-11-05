@@ -16,8 +16,9 @@ import {
  * and calls executeConversion on them. This is a keeper process that runs
  * off-chain and cranks the protocol's JPY-to-USDC conversion pipeline.
  *
- * `keeper` must be the protocol authority (ProtocolConfig.authority):
- * exodus-core's execute_conversion rejects any other signer.
+ * `keeper` must be ProtocolConfig.keeper (set by the authority with
+ * set_keeper) or the protocol authority: exodus-core's execute_conversion
+ * rejects any other signer.
  */
 export class ConversionBot {
   private connection: Connection;
@@ -155,9 +156,12 @@ export class ConversionBot {
     const [usdcVault] = findUsdcVaultPda(this.programId);
 
     const config: any = await (this.program.account as any).protocolConfig.fetch(configPda);
-    if (!config.authority.equals(this.keeper.publicKey)) {
+    if (
+      !config.keeper.equals(this.keeper.publicKey) &&
+      !config.authority.equals(this.keeper.publicKey)
+    ) {
       throw new Error(
-        `[ConversionBot] keeper ${this.keeper.publicKey.toBase58()} is not the protocol authority ${config.authority.toBase58()}`
+        `[ConversionBot] keeper ${this.keeper.publicKey.toBase58()} is neither the configured keeper ${config.keeper.toBase58()} nor the protocol authority ${config.authority.toBase58()}`
       );
     }
     const [yieldSourcePda] = findYieldSourcePda(configPda, config.usdcMint, this.programId);

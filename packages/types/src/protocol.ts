@@ -22,6 +22,8 @@ export interface ProtocolConfig {
   bump: number;
   jpyVaultBump: number;
   usdcVaultBump: number;
+  /** Keeper allowed to run update_nav / execute_conversion (the authority may too) */
+  keeper: PublicKey;
 }
 
 export interface YieldSourceAccount {

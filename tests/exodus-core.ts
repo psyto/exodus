@@ -366,6 +366,7 @@ describe("exodus-core (bankrun)", () => {
       conversionFeeBps: 30,       // 0.30%
       managementFeeBps: 50,       // 0.50%
       performanceFeeBps: 1000,    // 10%
+      keeper: keeper.publicKey,
     };
 
     await coreProgram.methods
@@ -761,12 +762,12 @@ describe("exodus-core (bankrun)", () => {
     await coreProgram.methods
       .updateNav()
       .accounts({
-        keeper: authority.publicKey,
+        keeper: keeper.publicKey,
         protocolConfig,
         yieldSource,
         tbillVaultConfig,
       })
-      .signers([authority])
+      .signers([keeper])
       .rpc();
 
     const ys = await coreProgram.account.yieldSource.fetch(yieldSource);

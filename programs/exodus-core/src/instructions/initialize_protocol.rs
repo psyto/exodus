@@ -14,6 +14,8 @@ pub struct InitializeProtocolParams {
     pub conversion_fee_bps: u16,
     pub management_fee_bps: u16,
     pub performance_fee_bps: u16,
+    /// Keeper allowed to run update_nav / execute_conversion
+    pub keeper: Pubkey,
 }
 
 #[derive(Accounts)]
@@ -95,6 +97,7 @@ pub fn handler(ctx: Context<InitializeProtocol>, params: InitializeProtocolParam
     config.bump = ctx.bumps.protocol_config;
     config.jpy_vault_bump = ctx.bumps.jpy_vault;
     config.usdc_vault_bump = ctx.bumps.usdc_vault;
+    config.keeper = params.keeper;
 
     emit!(ProtocolInitialized {
         authority: config.authority,

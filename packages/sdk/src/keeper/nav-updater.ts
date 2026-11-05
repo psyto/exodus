@@ -133,11 +133,16 @@ export class NavUpdater {
       return;
     }
 
-    // update_nav requires keeper == ProtocolConfig.authority (offset 8..40)
+    // update_nav requires keeper == ProtocolConfig.keeper (bytes 322..354)
+    // or ProtocolConfig.authority (bytes 8..40)
     const authority = new PublicKey(configInfo.data.subarray(8, 40));
-    if (!authority.equals(this.keeper.publicKey)) {
+    const configKeeper = new PublicKey(configInfo.data.subarray(322, 354));
+    if (
+      !configKeeper.equals(this.keeper.publicKey) &&
+      !authority.equals(this.keeper.publicKey)
+    ) {
       throw new Error(
-        `[NavUpdater] keeper ${this.keeper.publicKey.toBase58()} is not the protocol authority ${authority.toBase58()}`
+        `[NavUpdater] keeper ${this.keeper.publicKey.toBase58()} is neither the configured keeper ${configKeeper.toBase58()} nor the protocol authority ${authority.toBase58()}`
       );
     }
 
