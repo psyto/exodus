@@ -1,6 +1,7 @@
 import { Program, AnchorProvider, BN } from "@coral-xyz/anchor";
 import { Connection, PublicKey, SystemProgram } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { resolveTransferHookAccounts } from "./utils/transfer-hook";
 import {
   ProtocolConfig,
   UserPosition,
@@ -180,6 +181,16 @@ export class ExodusClient {
       this.programIds.core
     );
     const [jpyVault] = findJpyVaultPda(this.programIds.core);
+    // The JPY mint's transfer-hook accounts, forwarded by the program.
+    const hookAccounts = await resolveTransferHookAccounts(
+      this.provider.connection,
+      accounts.jpyMint,
+      accounts.userJpyAta,
+      jpyVault,
+      user,
+      BigInt(jpyAmount.toString()),
+      accounts.token2022Program,
+    );
 
     const program = await this.getCoreProgram();
     const tx = await program.methods
@@ -197,6 +208,7 @@ export class ExodusClient {
         token2022Program: accounts.token2022Program,
         systemProgram: SystemProgram.programId,
       })
+      .remainingAccounts(hookAccounts)
       .rpc();
 
     return tx;

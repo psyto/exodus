@@ -27,8 +27,10 @@ pub mod exodus_core {
         instructions::register_yield_source::handler(ctx, params)
     }
 
-    pub fn deposit_jpy(
-        ctx: Context<DepositJpy>,
+    /// The JPY mint's transfer-hook accounts (resolved extra accounts, hook
+    /// program, ExtraAccountMeta list) go in the remaining accounts.
+    pub fn deposit_jpy<'info>(
+        ctx: Context<'_, '_, '_, 'info, DepositJpy<'info>>,
         jpy_amount: u64,
         min_usdc_out: u64,
     ) -> Result<()> {

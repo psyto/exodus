@@ -8,6 +8,7 @@ import {
   findJpyVaultPda,
   findYieldSourcePda,
 } from "../pda";
+import { resolveTransferHookAccounts } from "../utils/transfer-hook";
 
 // ─── depositJpy ──────────────────────────────────────────────────────────────
 
@@ -28,7 +29,9 @@ export interface BuildDepositJpyAccounts {
  * Build a `depositJpy` TransactionInstruction.
  *
  * Transfers JPY from the user into the protocol JPY vault, creates a
- * PendingDeposit PDA that a keeper will later convert to USDC.
+ * PendingDeposit PDA that a keeper will later convert to USDC. When the JPY
+ * mint has a transfer hook, the hook's accounts are resolved from the mint
+ * and passed as remaining accounts.
  *
  * @param program    - Anchor Program instance for exodus-core.
  * @param user       - The depositor (signer / fee-payer).
@@ -50,6 +53,15 @@ export async function buildDepositJpyIx(
   const [userPosition] = findUserPositionPda(protocolConfig, user, programId);
   const [pendingDeposit] = findPendingDepositPda(protocolConfig, user, nonce, programId);
   const [jpyVault] = findJpyVaultPda(programId);
+  const hookAccounts = await resolveTransferHookAccounts(
+    program.provider.connection,
+    accounts.jpyMint,
+    accounts.userJpyAta,
+    jpyVault,
+    user,
+    BigInt(jpyAmount.toString()),
+    accounts.token2022Program,
+  );
 
   return program.methods
     .depositJpy(jpyAmount, minUsdcOut)
@@ -66,6 +78,7 @@ export async function buildDepositJpyIx(
       token2022Program: accounts.token2022Program,
       systemProgram: SystemProgram.programId,
     })
+    .remainingAccounts(hookAccounts)
     .instruction();
 }
 

@@ -169,7 +169,11 @@ pub(crate) fn read_sovereign_tier(sovereign_identity: &AccountInfo, user: &Pubke
     Ok(data[SOV_OFFSET_TIER])
 }
 
-pub fn handler(ctx: Context<DepositJpy>, jpy_amount: u64, min_usdc_out: u64) -> Result<()> {
+pub fn handler<'info>(
+    ctx: Context<'_, '_, '_, 'info, DepositJpy<'info>>,
+    jpy_amount: u64,
+    min_usdc_out: u64,
+) -> Result<()> {
     let config = &ctx.accounts.protocol_config;
     require!(config.is_active, ExodusError::ProtocolNotActive);
     require!(jpy_amount > 0, ExodusError::ZeroDeposit);
@@ -207,26 +211,19 @@ pub fn handler(ctx: Context<DepositJpy>, jpy_amount: u64, min_usdc_out: u64) -> 
         .ok_or(ExodusError::MathOverflow)?;
     require!(new_monthly <= limit, ExodusError::MonthlyLimitExceeded);
 
-    // 3. Transfer JPY from user to jpy_vault via Token-2022
-    let transfer_ix = spl_token_2022::instruction::transfer_checked(
-        &ctx.accounts.token_2022_program.key(),
-        &ctx.accounts.user_jpy_ata.key(),
-        &ctx.accounts.jpy_mint.key(),
-        &ctx.accounts.jpy_vault.key(),
-        &ctx.accounts.user.key(),
-        &[],
+    // 3. Transfer JPY from user to jpy_vault via Token-2022. The JPY mint's
+    //    transfer-hook accounts come in the remaining accounts; Token-2022
+    //    resolves the hook's ExtraAccountMeta list and finds them there.
+    spl_token_2022::onchain::invoke_transfer_checked(
+        ctx.accounts.token_2022_program.key,
+        ctx.accounts.user_jpy_ata.to_account_info(),
+        ctx.accounts.jpy_mint.to_account_info(),
+        ctx.accounts.jpy_vault.to_account_info(),
+        ctx.accounts.user.to_account_info(),
+        ctx.remaining_accounts,
         jpy_amount,
         6, // decimals
-    )?;
-    anchor_lang::solana_program::program::invoke(
-        &transfer_ix,
-        &[
-            ctx.accounts.user_jpy_ata.to_account_info(),
-            ctx.accounts.jpy_mint.to_account_info(),
-            ctx.accounts.jpy_vault.to_account_info(),
-            ctx.accounts.user.to_account_info(),
-            ctx.accounts.token_2022_program.to_account_info(),
-        ],
+        &[],
     )?;
 
     // 4. Init PendingDeposit
