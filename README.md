@@ -155,6 +155,8 @@ EXODUS integrates three standalone external projects for its compliance stack. T
 
 Which Accredit entry is accepted: `deposit_jpy` and `deposit_usdc` derive the trusted registry as `["kyc_registry", jpy_mint]` under `ProtocolConfig.kyc_registry` (the Accredit program id), and accept only the `WhitelistEntry` at `["whitelist", registry, user]` whose `registry` field is that registry. The entry must belong to the depositing wallet, be active and not expired (expiry 0 = no expiry); US-jurisdiction entries are rejected. The SDK exports `findAccreditKycRegistryPda(jpyMint, accreditProgramId)` and `findAccreditWhitelistEntryPda(kycRegistry, wallet, accreditProgramId)`.
 
+JPY mints with the Accredit transfer hook: Token-2022 also runs the hook on the `deposit_jpy` transfer, so the caller passes the hook's accounts (resolved extra accounts, the hook program and its ExtraAccountMeta list) as remaining accounts; the SDK resolves them with `resolveTransferHookAccounts`. The hook checks the recipient too, so **the JPY vault's owner, the `ProtocolConfig` PDA (`["exodus_config"]`), needs its own active `WhitelistEntry` in the JPY mint's registry, with `daily_limit` 0** (unlimited) and a non-US jurisdiction. Without it every deposit fails.
+
 **Off-chain (sanctions / PEP screening):**
 
 - **[Complr](https://github.com/psyto/complr)** (`@complr/sdk`) — Standalone off-chain sanctions and politically-exposed-person (PEP) screening service. EXODUS uses `screenWallet` (check a wallet against sanctions/PEP lists) and `checkConversionCompliance` (verify a JPY-to-USDC conversion is permitted before execution).
@@ -239,7 +241,7 @@ cd app && pnpm dev
 
 ### Key Design Decisions
 
-- **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 for `transfer_checked` operations (`deposit_jpy` accepts the Token-2022 or SPL Token program, so tests can use a classic SPL mint). Compliance is enforced via manual Accredit PDA validation in the deposit instructions, not via Token-2022 transfer hooks. USDC uses standard SPL Token.
+- **Token-2022 for JPY, SPL Token for USDC** — JPY stablecoin uses Token-2022 for `transfer_checked` operations (`deposit_jpy` accepts the Token-2022 or SPL Token program, so tests can use a classic SPL mint). Compliance is enforced via manual Accredit PDA validation in the deposit instructions; if the JPY mint also has the Accredit transfer hook, `deposit_jpy` forwards the hook's accounts so Token-2022 can run it. USDC uses standard SPL Token.
 - **Two-step deposit flow** — `deposit_jpy` creates a pending deposit; `execute_conversion` (keeper) performs the actual conversion. This separates user intent from execution and enables off-chain JPY→USDC sourcing.
 - **Read-only compliance + off-chain screening** — On-chain, the program deserializes Accredit/Sovereign PDA accounts directly (no CPI). Off-chain, Complr provides sanctions/PEP screening via `screenWallet` and `checkConversionCompliance` before transactions are submitted. All three compliance projects (Accredit, Complr, Stratum) are standalone repositories integrated via `file:` dependencies.
 - **Stratum-backed batch verification (SDK-side)** — Stratum merkle trees enable batch KYC verification (avoiding per-user PDA lookups) and conversion history audit proofs. Bitfields provide compact conversion limit tracking for keeper bots. These operate in the SDK layer, not as on-chain constraints.
