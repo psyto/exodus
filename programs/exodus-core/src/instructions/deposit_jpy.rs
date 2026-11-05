@@ -6,6 +6,11 @@ use crate::errors::ExodusError;
 use crate::events::DepositInitiated;
 use crate::state::{PendingDeposit, ProtocolConfig, UserPosition};
 
+/// Accredit transfer-hook WhitelistEntry PDA prefix: ["whitelist", wallet]
+pub const WHITELIST_SEED: &[u8] = b"whitelist";
+/// Sovereign SovereignIdentity PDA prefix: ["identity", owner]
+pub const SOVEREIGN_IDENTITY_SEED: &[u8] = b"identity";
+
 #[derive(Accounts)]
 pub struct DepositJpy<'info> {
     #[account(mut)]
@@ -59,11 +64,23 @@ pub struct DepositJpy<'info> {
     pub pending_deposit: Account<'info, PendingDeposit>,
 
     /// Accredit WhitelistEntry PDA for this user.
-    /// CHECK: Manually deserialized and validated.
+    /// CHECK: Owned by the configured KYC program at ["whitelist", user]; fields read in the handler.
+    #[account(
+        owner = protocol_config.kyc_registry @ ExodusError::KycRequired,
+        seeds = [WHITELIST_SEED, user.key().as_ref()],
+        bump,
+        seeds::program = protocol_config.kyc_registry,
+    )]
     pub whitelist_entry: AccountInfo<'info>,
 
     /// Sovereign Identity PDA for this user.
-    /// CHECK: Manually deserialized to extract tier.
+    /// CHECK: Owned by the configured Sovereign program at ["identity", user]; tier read in the handler.
+    #[account(
+        owner = protocol_config.sovereign_program @ ExodusError::SovereignIdentityNotFound,
+        seeds = [SOVEREIGN_IDENTITY_SEED, user.key().as_ref()],
+        bump,
+        seeds::program = protocol_config.sovereign_program,
+    )]
     pub sovereign_identity: AccountInfo<'info>,
 
     /// Token-2022 program (for JPY transfer)

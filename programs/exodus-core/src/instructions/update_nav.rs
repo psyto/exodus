@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::errors::ExodusError;
 use crate::events::NavUpdated;
 use crate::state::{ProtocolConfig, YieldSource};
+use exodus_tbill_vault::state::VaultConfig;
 
 /// Reads the T-Bill vault's NAV per share.
 /// VaultConfig layout after 8-byte discriminator:
@@ -13,7 +14,10 @@ const TBILL_NAV_OFFSET: usize = 8 + 32 + 32 + 32 + 32 + 2 + 8 + 8;
 
 #[derive(Accounts)]
 pub struct UpdateNav<'info> {
-    /// Keeper that triggers the NAV update
+    /// Keeper that triggers the NAV update (the protocol authority)
+    #[account(
+        constraint = keeper.key() == protocol_config.authority @ ExodusError::Unauthorized,
+    )]
     pub keeper: Signer<'info>,
 
     #[account(
@@ -35,7 +39,13 @@ pub struct UpdateNav<'info> {
     pub yield_source: Account<'info, YieldSource>,
 
     /// The T-Bill VaultConfig account to read NAV from
-    /// CHECK: Manually deserialized
+    /// CHECK: Owner and PDA pinned to exodus-tbill-vault's VaultConfig; fields manually deserialized.
+    #[account(
+        owner = exodus_tbill_vault::ID @ ExodusError::InvalidAccountData,
+        seeds = [VaultConfig::SEED],
+        bump,
+        seeds::program = exodus_tbill_vault::ID,
+    )]
     pub tbill_vault_config: AccountInfo<'info>,
 }
 

@@ -5,6 +5,7 @@ use exodus_types::{allowed_yield_sources, monthly_usdc_limit};
 use crate::errors::ExodusError;
 use crate::events::DirectUsdcDeposit;
 use crate::state::{ProtocolConfig, UserPosition, YieldSource};
+use crate::instructions::deposit_jpy::{SOVEREIGN_IDENTITY_SEED, WHITELIST_SEED};
 
 #[derive(Accounts)]
 pub struct DepositUsdc<'info> {
@@ -55,11 +56,23 @@ pub struct DepositUsdc<'info> {
     pub user_position: Box<Account<'info, UserPosition>>,
 
     /// Accredit WhitelistEntry PDA
-    /// CHECK: Manually validated
+    /// CHECK: Owned by the configured KYC program at ["whitelist", user]; fields read in the handler.
+    #[account(
+        owner = protocol_config.kyc_registry @ ExodusError::KycRequired,
+        seeds = [WHITELIST_SEED, user.key().as_ref()],
+        bump,
+        seeds::program = protocol_config.kyc_registry,
+    )]
     pub whitelist_entry: AccountInfo<'info>,
 
     /// Sovereign Identity PDA
-    /// CHECK: Manually validated
+    /// CHECK: Owned by the configured Sovereign program at ["identity", user]; tier read in the handler.
+    #[account(
+        owner = protocol_config.sovereign_program @ ExodusError::SovereignIdentityNotFound,
+        seeds = [SOVEREIGN_IDENTITY_SEED, user.key().as_ref()],
+        bump,
+        seeds::program = protocol_config.sovereign_program,
+    )]
     pub sovereign_identity: AccountInfo<'info>,
 
     /// T-Bill vault program for CPI

@@ -44,8 +44,11 @@ describe("exodus-core (bankrun)", () => {
 
   // Mock external accounts (pre-loaded via bankrun)
   let oracleKeypair: Keypair;
-  let whitelistEntryKeypair: Keypair;
-  let sovereignIdentityKeypair: Keypair;
+  // Mock owner programs: the core program checks the identity PDAs against these
+  let kycProgramId: PublicKey;
+  let sovereignProgramId: PublicKey;
+  let whitelistEntry: PublicKey;
+  let sovereignIdentity: PublicKey;
 
   // PDAs
   let protocolConfig: PublicKey;
@@ -69,8 +72,16 @@ describe("exodus-core (bankrun)", () => {
     keeper = Keypair.generate();
     noKycUser = Keypair.generate();
     oracleKeypair = Keypair.generate();
-    whitelistEntryKeypair = Keypair.generate();
-    sovereignIdentityKeypair = Keypair.generate();
+    kycProgramId = Keypair.generate().publicKey;
+    sovereignProgramId = Keypair.generate().publicKey;
+    [whitelistEntry] = PublicKey.findProgramAddressSync(
+      [Buffer.from("whitelist"), user.publicKey.toBuffer()],
+      kycProgramId
+    );
+    [sovereignIdentity] = PublicKey.findProgramAddressSync(
+      [Buffer.from("identity"), user.publicKey.toBuffer()],
+      sovereignProgramId
+    );
 
     // ------------------------------------------------------------------
     // 2. Build mock account data buffers
@@ -157,21 +168,21 @@ describe("exodus-core (bankrun)", () => {
       },
       // Accredit WhitelistEntry mock for `user`
       {
-        address: whitelistEntryKeypair.publicKey,
+        address: whitelistEntry,
         info: {
           lamports: 1_000_000_000,
           data: wlData,
-          owner: SystemProgram.programId,
+          owner: kycProgramId,
           executable: false,
         },
       },
       // Sovereign Identity mock for `user`
       {
-        address: sovereignIdentityKeypair.publicKey,
+        address: sovereignIdentity,
         info: {
           lamports: 1_000_000_000,
           data: sovData,
-          owner: SystemProgram.programId,
+          owner: sovereignProgramId,
           executable: false,
         },
       },
@@ -344,8 +355,8 @@ describe("exodus-core (bankrun)", () => {
   it("initializes the protocol", async () => {
     const params = {
       oracle: oracleKeypair.publicKey,
-      kycRegistry: PublicKey.default,
-      sovereignProgram: PublicKey.default,
+      kycRegistry: kycProgramId,
+      sovereignProgram: sovereignProgramId,
       conversionFeeBps: 30,       // 0.30%
       managementFeeBps: 50,       // 0.50%
       performanceFeeBps: 1000,    // 10%
@@ -464,8 +475,8 @@ describe("exodus-core (bankrun)", () => {
         jpyVault,
         userPosition,
         pendingDeposit,
-        whitelistEntry: whitelistEntryKeypair.publicKey,
-        sovereignIdentity: sovereignIdentityKeypair.publicKey,
+        whitelistEntry,
+        sovereignIdentity,
         token2022Program: TOKEN_PROGRAM_ID,       // Standard SPL for test
         systemProgram: SystemProgram.programId,
       })
@@ -622,7 +633,7 @@ describe("exodus-core (bankrun)", () => {
     await coreProgram.methods
       .executeConversion()
       .accounts({
-        keeper: keeper.publicKey,
+        keeper: authority.publicKey,
         protocolConfig,
         pendingDeposit,
         userPosition,
@@ -635,7 +646,7 @@ describe("exodus-core (bankrun)", () => {
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
-      .signers([keeper])
+      .signers([authority])
       .rpc();
 
     // Verify conversion record
@@ -684,8 +695,8 @@ describe("exodus-core (bankrun)", () => {
         userUsdc: userUsdcAta,
         depositVault: usdcVault,
         userPosition,
-        whitelistEntry: whitelistEntryKeypair.publicKey,
-        sovereignIdentity: sovereignIdentityKeypair.publicKey,
+        whitelistEntry,
+        sovereignIdentity,
         tbillVaultProgram: TBILL_PROGRAM_ID,
         tbillVaultConfig,
         tbillShareMint,
@@ -744,12 +755,12 @@ describe("exodus-core (bankrun)", () => {
     await coreProgram.methods
       .updateNav()
       .accounts({
-        keeper: keeper.publicKey,
+        keeper: authority.publicKey,
         protocolConfig,
         yieldSource,
         tbillVaultConfig,
       })
-      .signers([keeper])
+      .signers([authority])
       .rpc();
 
     const ys = await coreProgram.account.yieldSource.fetch(yieldSource);
