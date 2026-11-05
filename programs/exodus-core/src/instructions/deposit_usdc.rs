@@ -58,10 +58,14 @@ pub struct DepositUsdc<'info> {
     pub user_position: Box<Account<'info, UserPosition>>,
 
     /// Accredit WhitelistEntry PDA
-    /// CHECK: Owned by the configured KYC program at ["whitelist", user]; fields read in the handler.
+    /// CHECK: Owned by the configured KYC program at ["whitelist", <JPY mint registry>, user]; fields read in the handler.
     #[account(
         owner = protocol_config.kyc_registry @ ExodusError::KycRequired,
-        seeds = [WHITELIST_SEED, user.key().as_ref()],
+        seeds = [
+            WHITELIST_SEED,
+            trusted_kyc_registry(&protocol_config).as_ref(),
+            user.key().as_ref()
+        ],
         bump,
         seeds::program = protocol_config.kyc_registry,
     )]

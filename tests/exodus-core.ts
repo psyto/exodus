@@ -81,7 +81,7 @@ describe("exodus-core (bankrun)", () => {
     );
     sovereignProgramId = Keypair.generate().publicKey;
     [whitelistEntry] = PublicKey.findProgramAddressSync(
-      [Buffer.from("whitelist"), user.publicKey.toBuffer()],
+      [Buffer.from("whitelist"), trustedRegistry.toBuffer(), user.publicKey.toBuffer()],
       kycProgramId
     );
     [sovereignIdentity] = PublicKey.findProgramAddressSync(

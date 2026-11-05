@@ -124,3 +124,33 @@ export function findTBillSharesPda(
     programId
   );
 }
+
+/**
+ * Accredit KycRegistry the deposits trust: ["kyc_registry", jpy_mint] under
+ * the Accredit transfer-hook program (ProtocolConfig.kyc_registry).
+ */
+export function findAccreditKycRegistryPda(
+  jpyMint: PublicKey,
+  accreditProgramId: PublicKey
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("kyc_registry"), jpyMint.toBuffer()],
+    accreditProgramId
+  );
+}
+
+/**
+ * Accredit WhitelistEntry PDA the deposit instructions expect:
+ * ["whitelist", kyc_registry, wallet], where kyc_registry is
+ * findAccreditKycRegistryPda(jpyMint, accreditProgramId).
+ */
+export function findAccreditWhitelistEntryPda(
+  kycRegistry: PublicKey,
+  wallet: PublicKey,
+  accreditProgramId: PublicKey
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("whitelist"), kycRegistry.toBuffer(), wallet.toBuffer()],
+    accreditProgramId
+  );
+}
